@@ -71,7 +71,7 @@ fun DocumentsApp(incomingUri: Uri?, viewModel: DocumentViewModel = viewModel()) 
                     is ViewerState.Error -> Message(s.message) {
                         Button(onClick = { picker.launch(arrayOf("application/pdf")) }) { Text("Open another file") }
                     }
-                    is ViewerState.Ready -> PageList(document = s.document, zoom = zoom)
+                    is ViewerState.Ready -> PageList(document = s.document, zoom = zoom, onZoomChange = { zoom = it })
                 }
             }
         }

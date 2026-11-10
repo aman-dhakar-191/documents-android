@@ -8,11 +8,12 @@ Editing and Word documents are planned but not started; see [docs/SPEC.md](docs/
 
 | Feature | Status |
 | --- | --- |
-| Open a PDF from the system picker | Implemented, **not yet tested on a device** |
-| Open a PDF from another app / file manager ("Open with") | Implemented, **not yet tested on a device** |
-| Scroll pages, zoom with the − / + buttons | Implemented, **not yet tested on a device** |
+| Open a PDF from the system picker | Implemented; the owner reports PDFs open on their phone |
+| Open a PDF from another app / file manager ("Open with") | Implemented; the owner reports PDFs open on their phone (which route was used isn't recorded) |
+| Scroll pages, zoom with the − / + buttons | Implemented; the owner reports PDFs open on their phone, zoom buttons not separately checked |
+| Pinch-to-zoom with two fingers | Implemented, **not yet tested on a device** |
 | Unit tests (format detection, page sizing, zoom) | Written; CI result: see the Actions tab |
-| Pinch-to-zoom, text search, text selection, password-protected PDFs | Not implemented |
+| Text search, text selection, password-protected PDFs | Not implemented |
 | Annotate / edit PDFs | Not implemented (planned) |
 | Word (.doc/.docx) viewing and editing | Not implemented (planned) |
 

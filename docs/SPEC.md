@@ -25,8 +25,8 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
 ## Phases
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 1 | View PDFs: picker, open-with, scroll, button zoom, error states, CI, signed releases | In progress (needs CI green and a device check) |
-| 2 | Better viewing: pinch-to-zoom, remember last page, password-protected PDFs, text search / selection (likely needs a third-party library: check licence, e.g. MuPDF is AGPL) | Not started |
+| 1 | View PDFs: picker, open-with, scroll, button and pinch zoom, error states, CI, signed releases | In progress (needs CI green and a device check) |
+| 2 | Better viewing: remember last page, password-protected PDFs, text search / selection (likely needs a third-party library: check licence, e.g. MuPDF is AGPL) | Not started |
 | 3 | PDF annotation / editing (library choice and licence to decide first) | Not started, needs an explicit go-ahead |
 | 4 | Word (.docx) viewing, then editing (large; Apache POI is heavy on Android, faithful layout is hard) | Not started, needs an explicit go-ahead |
 
