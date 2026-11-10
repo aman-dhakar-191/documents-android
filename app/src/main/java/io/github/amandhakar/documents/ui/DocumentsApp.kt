@@ -65,20 +65,28 @@ fun DocumentsApp(
     MaterialTheme {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text("Documents") },
-                    navigationIcon = {
-                        if (!inLibrary) TextButton(onClick = goBack) { Text("Back") }
-                    },
-                    actions = {
-                        if (state is ViewerState.Ready) {
-                            TextButton(onClick = { zoom = Zoom.zoomOut(zoom) }, enabled = zoom > Zoom.MIN) { Text("−") }
-                            Text("${(zoom * 100).roundToInt()}%")
-                            TextButton(onClick = { zoom = Zoom.zoomIn(zoom) }, enabled = zoom < Zoom.MAX) { Text("+") }
-                        }
-                        TextButton(onClick = { picker.launch(arrayOf("application/pdf")) }) { Text("Browse") }
-                    },
-                )
+                if (inLibrary) {
+                    TopAppBar(
+                        title = { Text("Documents") },
+                        actions = {
+                            TextButton(onClick = { picker.launch(arrayOf("application/pdf")) }) { Text("Browse") }
+                        },
+                    )
+                } else {
+                    // Reading: no app title and a slimmer bar, so the page gets the room.
+                    TopAppBar(
+                        expandedHeight = 48.dp,
+                        title = {},
+                        navigationIcon = { TextButton(onClick = goBack) { Text("Back") } },
+                        actions = {
+                            if (state is ViewerState.Ready) {
+                                TextButton(onClick = { zoom = Zoom.zoomOut(zoom) }, enabled = zoom > Zoom.MIN) { Text("−") }
+                                Text("${(zoom * 100).roundToInt()}%")
+                                TextButton(onClick = { zoom = Zoom.zoomIn(zoom) }, enabled = zoom < Zoom.MAX) { Text("+") }
+                            }
+                        },
+                    )
+                }
             },
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -30,6 +31,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +47,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
+import io.github.amandhakar.documents.defaultapp.DefaultKind
+import io.github.amandhakar.documents.defaultapp.DefaultPdfApp
+import io.github.amandhakar.documents.defaultapp.DefaultPdfApps
 import io.github.amandhakar.documents.library.PdfFile
 import io.github.amandhakar.documents.library.PdfFiles
 import io.github.amandhakar.documents.library.StorageAccess
@@ -63,9 +70,15 @@ fun LibraryScreen(
         viewModel.refresh()
     }
 
+    var defaultApp by remember { mutableStateOf(DefaultPdfApps.detect(context)) }
+
     LaunchedEffect(Unit) { viewModel.refresh() }
-    // Coming back from Android's settings screen (or from another app) re-checks and re-reads.
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refresh() }
+    // Coming back from Android's settings screen (or from another app) re-checks and re-reads,
+    // including who the default PDF app is, since the user may just have changed it.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refresh()
+        defaultApp = DefaultPdfApps.detect(context)
+    }
 
     when (val s = state) {
         LibraryState.Loading -> Box(Modifier.fillMaxSize()) {
@@ -100,8 +113,45 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                if (defaultApp.kind != DefaultKind.Ours) {
+                    item(key = "default-app", span = { GridItemSpan(maxLineSpan) }) {
+                        DefaultAppCard(defaultApp, s.files.first().uri)
+                    }
+                }
                 items(s.files, key = { it.id }) { file ->
                     PdfCard(file, onClick = { onOpen(file.uri) })
+                }
+            }
+        }
+    }
+}
+
+/** Explains how to make Documents the app that opens PDFs from other apps, and takes you there. */
+@Composable
+private fun DefaultAppCard(app: DefaultPdfApp, samplePdf: Uri) {
+    val context = LocalContext.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Make Documents your default PDF app", style = MaterialTheme.typography.titleMedium)
+            val otherPackage = app.packageName
+            if (app.kind == DefaultKind.Other && otherPackage != null) {
+                val name = app.label ?: "another app"
+                Text(
+                    "PDFs you open from other apps currently go to $name. To change that, open its " +
+                        "settings, tap \"Open by default\" (or \"Set as default\"), then \"Clear defaults\". " +
+                        "Next time you open a PDF, choose Documents and tap Always.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(onClick = { DefaultPdfApps.openAppSettings(context, otherPackage) }) {
+                    Text("Open $name settings")
+                }
+            } else {
+                Text(
+                    "No app is set for PDFs yet. Tap the button, choose Documents, then tap Always.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(onClick = { DefaultPdfApps.askWhichToUse(context, samplePdf) }) {
+                    Text("Choose default app")
                 }
             }
         }

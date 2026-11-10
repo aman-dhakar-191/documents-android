@@ -17,7 +17,8 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    switched on by the user in Settings) and `READ_EXTERNAL_STORAGE` (`maxSdkVersion` 29). The
    owner chose this over picking folders or a "recently opened" list. Trade-off: it is a broad
    permission that friends will see. The app has no `INTERNET` permission and uploads nothing.
-   Without the permission the library screen explains why it is needed and offers Browse (the
+   A `<queries>` entry (not a permission) lets the app see which PDF viewers exist, to tell the
+   user which one is the default. Without the permission the library screen explains why it is needed and offers Browse (the
    picker) instead. Any further permission needs a new decision here.
 5. **Extensibility without speculation**: a small `Document` interface (page count, render
    page) and `DocumentFormat` / `DocumentOpener` routing by MIME type. A new format means one new
