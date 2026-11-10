@@ -2,8 +2,12 @@ package io.github.amandhakar.documents.document
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Point
 import android.graphics.pdf.PdfRenderer
+import android.graphics.pdf.models.selection.SelectionBoundary
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import androidx.annotation.RequiresApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -30,6 +34,9 @@ internal class PdfDocument(
 
     override val pageCount: Int = renderer.pageCount
 
+    // Android's PDF renderer gained text selection in Android 15 (API 35).
+    override val supportsTextSelection: Boolean = Build.VERSION.SDK_INT >= 35
+
     override suspend fun renderPage(index: Int, widthPx: Int): Bitmap = withContext(Dispatchers.IO) {
         synchronized(lock) {
             check(!closed) { "document is closed" }
@@ -45,6 +52,36 @@ internal class PdfDocument(
             }
         }
     }
+
+    override suspend fun selectText(pageIndex: Int, start: NormPoint, stop: NormPoint): PageText? =
+        withContext(Dispatchers.IO) {
+            if (Build.VERSION.SDK_INT >= 35) selectTextApi35(pageIndex, start, stop) else null
+        }
+
+    @RequiresApi(35)
+    private fun selectTextApi35(pageIndex: Int, start: NormPoint, stop: NormPoint): PageText? =
+        synchronized(lock) {
+            check(!closed) { "document is closed" }
+            val page = renderer.openPage(pageIndex)
+            try {
+                val width = page.width
+                val height = page.height
+                fun boundary(p: NormPoint) = SelectionBoundary(
+                    Point(PageGeometry.toPoints(p.x, width), PageGeometry.toPoints(p.y, height)),
+                )
+                val selection = page.selectContent(boundary(start), boundary(stop))
+                    ?: return@synchronized null
+                val contents = selection.selectedTextContents
+                val text = PageGeometry.joinText(contents.map { it.text })
+                if (text.isEmpty()) return@synchronized null
+                val bounds = contents.flatMap { it.bounds }.map {
+                    PageGeometry.normalize(it.left, it.top, it.right, it.bottom, width, height)
+                }
+                PageText(text, bounds)
+            } finally {
+                page.close()
+            }
+        }
 
     override fun close() {
         synchronized(lock) {

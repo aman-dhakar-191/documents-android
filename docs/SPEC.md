@@ -10,7 +10,11 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    is permanent once released.
 2. **Stack**: Kotlin, Jetpack Compose (Material 3), minSdk 26, targetSdk 35.
 3. **PDF rendering**: Android's built-in `PdfRenderer`. No third-party PDF library in phase 1.
-   Known limits: no text selection or search, no password-protected PDFs, no editing.
+   Known limits: no search, no password-protected PDFs, no editing. Text selection uses the PDF
+   text API that Android added in 15 (API 35), reached through the same `PdfRenderer`, so there is
+   still no third-party PDF library; phones older than Android 15 have no text selection. The owner
+   chose this over adding a library (PdfBox-Android, or MuPDF whose AGPL licence would apply to the
+   whole app). Selection stays on one page. Scanned PDFs have no text to select.
 4. **Permissions.** Opening one PDF (system picker, or another app's "open with") needs none.
    The library screen, which lists every PDF on the phone as a card, needs to see other apps'
    files, so the manifest asks for `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+,
@@ -33,7 +37,7 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | View PDFs: library of all PDFs as cards with previews, picker (Browse), open-with, scroll, button and pinch zoom, error states, CI, signed releases | In progress (v0.1.0 released; library and pinch zoom not yet device-tested) |
-| 2 | Better viewing: remember last page, password-protected PDFs, text search / selection (likely needs a third-party library: check licence, e.g. MuPDF is AGPL) | Not started |
+| 2 | Better viewing: text selection on Android 15+ (built in, no library), then remember last page, password-protected PDFs, text search (search is in the same Android 15 API; older phones would need a third-party library: check licence, e.g. MuPDF is AGPL) | Text selection implemented, not device-tested; rest not started |
 | 3 | PDF annotation / editing (library choice and licence to decide first) | Not started, needs an explicit go-ahead |
 | 4 | Word (.docx) viewing, then editing (large; Apache POI is heavy on Android, faithful layout is hard) | Not started, needs an explicit go-ahead |
 

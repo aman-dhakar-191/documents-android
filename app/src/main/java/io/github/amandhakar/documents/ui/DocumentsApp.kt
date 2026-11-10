@@ -36,10 +36,14 @@ import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
 import kotlin.math.roundToInt
 
+/** A PDF another app asked us to open. [serial] makes a repeat request for the same file count as new. */
+data class IncomingDocument(val uri: Uri, val serial: Int)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentsApp(
-    incomingUri: Uri?,
+    incoming: IncomingDocument?,
+    onExit: () -> Unit,
     viewModel: DocumentViewModel = viewModel(),
     libraryViewModel: LibraryViewModel = viewModel(),
 ) {
@@ -48,17 +52,35 @@ fun DocumentsApp(
     // Lives here (not in the library screen) so the list keeps its scroll position after reading a PDF.
     val gridState = rememberLazyGridState()
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) viewModel.open(uri)
+    // True while the PDF on screen was opened by another app: Back then returns to that app.
+    var openedFromOutside by rememberSaveable { mutableStateOf(false) }
+
+    fun openOurselves(uri: Uri) {
+        openedFromOutside = false
+        viewModel.open(uri)
     }
-    LaunchedEffect(incomingUri) {
-        if (incomingUri != null) viewModel.open(incomingUri)
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) openOurselves(uri)
+    }
+    LaunchedEffect(incoming) {
+        if (incoming != null) {
+            openedFromOutside = true
+            viewModel.open(incoming.uri)
+        }
     }
 
     val inLibrary = state is ViewerState.Empty
-    val goBack = {
+    val toLibrary: () -> Unit = {
         viewModel.close()
         zoom = 1f
+        openedFromOutside = false
+    }
+    val goBack: () -> Unit = {
+        when (BackNavigation.fromViewer(openedFromOutside)) {
+            BackTarget.ExitApp -> onExit() // the document is closed when the screen is destroyed
+            BackTarget.Library -> toLibrary()
+        }
     }
     BackHandler(enabled = !inLibrary, onBack = goBack)
 
@@ -94,11 +116,11 @@ fun DocumentsApp(
                     ViewerState.Empty -> LibraryScreen(
                         viewModel = libraryViewModel,
                         gridState = gridState,
-                        onOpen = { viewModel.open(it) },
+                        onOpen = { openOurselves(it) },
                     )
                     ViewerState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     is ViewerState.Error -> Message(s.message) {
-                        Button(onClick = goBack) { Text("Back to my PDFs") }
+                        Button(onClick = toLibrary) { Text("Back to my PDFs") }
                     }
                     is ViewerState.Ready -> PageList(document = s.document, zoom = zoom, onZoomChange = { zoom = it })
                 }
