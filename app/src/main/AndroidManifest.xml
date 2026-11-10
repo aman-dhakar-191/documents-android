@@ -12,6 +12,15 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
+    <!-- Not a permission: lets the app see which PDF viewers exist, so it can say which one is the
+         default and take you to its settings. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" android:mimeType="application/pdf" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

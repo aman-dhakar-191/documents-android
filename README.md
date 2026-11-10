@@ -9,11 +9,13 @@ Editing and Word documents are planned but not started; see [docs/SPEC.md](docs/
 | Feature | Status |
 | --- | --- |
 | Library: every PDF on the phone as a card with a first-page preview, newest first | Implemented, **not yet tested on a device** |
+| Card on the library screen that explains and opens the right Android settings to make Documents the default PDF app (Android can't do it for the app) | Implemented, **not yet tested on a device** |
+| Reading screen without the app title (slim Back / zoom bar only) | Implemented, **not yet tested on a device** |
 | Open a PDF from the system picker (Browse button) | Implemented; the owner reports PDFs open on their phone |
 | Open a PDF from another app / file manager ("Open with") | Implemented; the owner reports PDFs open on their phone (which route was used isn't recorded) |
 | Scroll pages, zoom with the − / + buttons | Implemented; the owner reports PDFs open on their phone, zoom buttons not separately checked |
 | Pinch-to-zoom with two fingers | Implemented, **not yet tested on a device** |
-| Unit tests (format detection, page sizing, zoom, card text and ordering) | Written; CI result: see the Actions tab |
+| Unit tests (format detection, page sizing, zoom, card text and ordering, default-app detection logic) | Written; CI result: see the Actions tab |
 | Text search, text selection, password-protected PDFs | Not implemented |
 | Annotate / edit PDFs | Not implemented (planned) |
 | Word (.doc/.docx) viewing and editing | Not implemented (planned) |
