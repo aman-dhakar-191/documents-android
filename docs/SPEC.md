@@ -11,8 +11,14 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
 2. **Stack**: Kotlin, Jetpack Compose (Material 3), minSdk 26, targetSdk 35.
 3. **PDF rendering**: Android's built-in `PdfRenderer`. No third-party PDF library in phase 1.
    Known limits: no text selection or search, no password-protected PDFs, no editing.
-4. **No permissions.** Files come from the system document picker or from another app's
-   "open with" (`ACTION_VIEW`, `application/pdf`).
+4. **Permissions.** Opening one PDF (system picker, or another app's "open with") needs none.
+   The library screen, which lists every PDF on the phone as a card, needs to see other apps'
+   files, so the manifest asks for `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+,
+   switched on by the user in Settings) and `READ_EXTERNAL_STORAGE` (`maxSdkVersion` 29). The
+   owner chose this over picking folders or a "recently opened" list. Trade-off: it is a broad
+   permission that friends will see. The app has no `INTERNET` permission and uploads nothing.
+   Without the permission the library screen explains why it is needed and offers Browse (the
+   picker) instead. Any further permission needs a new decision here.
 5. **Extensibility without speculation**: a small `Document` interface (page count, render
    page) and `DocumentFormat` / `DocumentOpener` routing by MIME type. A new format means one new
    `Document` implementation and one `when` branch. Nothing for future phases is built ahead of time.
@@ -25,8 +31,8 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
 ## Phases
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 1 | View PDFs: picker, open-with, scroll, button zoom, error states, CI, signed releases | In progress (needs CI green and a device check) |
-| 2 | Better viewing: pinch-to-zoom, remember last page, password-protected PDFs, text search / selection (likely needs a third-party library: check licence, e.g. MuPDF is AGPL) | Not started |
+| 1 | View PDFs: library of all PDFs as cards with previews, picker (Browse), open-with, scroll, button and pinch zoom, error states, CI, signed releases | In progress (v0.1.0 released; library and pinch zoom not yet device-tested) |
+| 2 | Better viewing: remember last page, password-protected PDFs, text search / selection (likely needs a third-party library: check licence, e.g. MuPDF is AGPL) | Not started |
 | 3 | PDF annotation / editing (library choice and licence to decide first) | Not started, needs an explicit go-ahead |
 | 4 | Word (.docx) viewing, then editing (large; Apache POI is heavy on Android, faithful layout is hard) | Not started, needs an explicit go-ahead |
 

@@ -3,6 +3,9 @@ package io.github.amandhakar.documents.ui
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,31 +18,86 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.document.Document
+import io.github.amandhakar.documents.document.Zoom
 import kotlinx.coroutines.CancellationException
 import kotlin.math.roundToInt
 
-/** Every page of [document], top to bottom. At zoom above 1 the pages are wider than the screen and scroll sideways. */
+/**
+ * Every page of [document], top to bottom. At zoom above 1 the pages are wider than the screen
+ * and scroll sideways. Pinching with two fingers scales the view live and, when the fingers lift,
+ * calls [onZoomChange] with the new zoom (the pages are then re-rendered sharp at that size).
+ */
 @Composable
-fun PageList(document: Document, zoom: Float, modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier.fillMaxSize().background(Color(0xFFE0E0E0)).clipToBounds()) {
+fun PageList(
+    document: Document,
+    zoom: Float,
+    onZoomChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val currentZoom by rememberUpdatedState(zoom)
+    val currentOnZoomChange by rememberUpdatedState(onZoomChange)
+    // Scale of the current pinch (1 when no pinch is happening). Only drawn, not re-rendered.
+    var pinch by remember { mutableStateOf(1f) }
+
+    BoxWithConstraints(
+        modifier
+            .fillMaxSize()
+            .background(Color(0xFFE0E0E0))
+            .clipToBounds()
+            // Watch events first (Initial pass) so a two-finger pinch isn't taken by the scrolling
+            // lists below; one-finger gestures are left alone and scroll as usual.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var pinching = false
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.count { it.pressed } >= 2) {
+                            pinching = true
+                            pinch = Zoom.pinchScale(currentZoom, pinch, event.calculateZoom())
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                    if (pinching) {
+                        val newZoom = Zoom.scaled(currentZoom, pinch)
+                        pinch = 1f
+                        currentOnZoomChange(newZoom)
+                    }
+                }
+            },
+    ) {
         val contentWidth = maxWidth * zoom
         val widthPx = with(LocalDensity.current) { contentWidth.roundToPx() }
         val horizontal = rememberScrollState()
-        LazyColumn(
-            modifier = Modifier.horizontalScroll(horizontal).width(contentWidth),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Box(
+            Modifier.graphicsLayer {
+                scaleX = pinch
+                scaleY = pinch
+            },
         ) {
-            items(count = document.pageCount, key = { it }) { index ->
-                PageImage(document, index, widthPx)
+            LazyColumn(
+                modifier = Modifier.horizontalScroll(horizontal).width(contentWidth),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(count = document.pageCount, key = { it }) { index ->
+                    PageImage(document, index, widthPx)
+                }
             }
         }
     }

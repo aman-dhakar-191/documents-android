@@ -54,6 +54,15 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Closes the open document (or a failed / loading one) and goes back to the library. */
+    fun close() {
+        job?.cancel()
+        job = null
+        closeCurrent()
+        currentUri = null
+        _state.value = ViewerState.Empty
+    }
+
     private fun closeCurrent() {
         (_state.value as? ViewerState.Ready)?.document?.close()
     }

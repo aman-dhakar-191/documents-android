@@ -8,17 +8,27 @@ Editing and Word documents are planned but not started; see [docs/SPEC.md](docs/
 
 | Feature | Status |
 | --- | --- |
-| Open a PDF from the system picker | Implemented, **not yet tested on a device** |
-| Open a PDF from another app / file manager ("Open with") | Implemented, **not yet tested on a device** |
-| Scroll pages, zoom with the − / + buttons | Implemented, **not yet tested on a device** |
-| Unit tests (format detection, page sizing, zoom) | Written; CI result: see the Actions tab |
-| Pinch-to-zoom, text search, text selection, password-protected PDFs | Not implemented |
+| Library: every PDF on the phone as a card with a first-page preview, newest first | Implemented, **not yet tested on a device** |
+| Open a PDF from the system picker (Browse button) | Implemented; the owner reports PDFs open on their phone |
+| Open a PDF from another app / file manager ("Open with") | Implemented; the owner reports PDFs open on their phone (which route was used isn't recorded) |
+| Scroll pages, zoom with the − / + buttons | Implemented; the owner reports PDFs open on their phone, zoom buttons not separately checked |
+| Pinch-to-zoom with two fingers | Implemented, **not yet tested on a device** |
+| Unit tests (format detection, page sizing, zoom, card text and ordering) | Written; CI result: see the Actions tab |
+| Text search, text selection, password-protected PDFs | Not implemented |
 | Annotate / edit PDFs | Not implemented (planned) |
 | Word (.doc/.docx) viewing and editing | Not implemented (planned) |
 
 The Android SDK isn't available where this was written, so GitHub Actions is the only build
 and test oracle. A feature isn't "working" here until CI is green and it has been tried on a
 phone.
+
+## Permissions
+
+Opening a single PDF (Browse, or "Open with" from another app) needs none. The library screen
+needs to see the PDFs on the phone: on Android 11+ you switch on **All files access** for
+Documents in Settings (the app takes you there), and on Android 10 and older it asks for the
+normal storage permission. The app has no internet permission and sends nothing anywhere. Without
+the permission the library is empty and Browse still works.
 
 ## Building
 
