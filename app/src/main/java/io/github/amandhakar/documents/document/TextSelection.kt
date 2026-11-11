@@ -6,8 +6,28 @@ data class NormPoint(val x: Float, val y: Float)
 /** A rectangle on a page as fractions of its width and height. */
 data class NormRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
-/** Text selected on one page, with the boxes to highlight (one per line). */
-data class PageText(val text: String, val bounds: List<NormRect>)
+/**
+ * One end of a text selection: either a spot the user pointed at, or an end kept from an earlier
+ * selection. Dragging one handle keeps the other end exactly where it was by passing it back as
+ * [Kept], so it doesn't shift to the nearest letter again.
+ */
+sealed interface TextEdge {
+    data class At(val point: NormPoint) : TextEdge
+
+    /** An end returned with a previous selection. [token] is whatever the document gave out; pass it back unchanged. */
+    class Kept(val token: Any) : TextEdge
+}
+
+/**
+ * Text selected on one page, with the boxes to highlight (one per line). [start] is the earlier
+ * end in reading order and [stop] the later one, so the first handle always belongs to [start].
+ */
+data class PageText(
+    val text: String,
+    val bounds: List<NormRect>,
+    val start: TextEdge.Kept,
+    val stop: TextEdge.Kept,
+)
 
 /**
  * Maths between a page's own units (points, 1/72 inch) and the fractions the screen code uses.

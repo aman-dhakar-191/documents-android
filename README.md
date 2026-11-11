@@ -16,8 +16,8 @@ Editing and Word documents are planned but not started; see [docs/SPEC.md](docs/
 | Open a PDF from another app / file manager ("Open with") | Implemented; the owner reports PDFs open on their phone (which route was used isn't recorded) |
 | Scroll pages, zoom with the − / + buttons | Implemented; the owner reports PDFs open on their phone, zoom buttons not separately checked |
 | Pinch-to-zoom with two fingers | Implemented, **not yet tested on a device** |
-| Unit tests (format detection, page sizing, zoom, card text and ordering, default-app detection logic, page-coordinate maths for text selection, which screen Back goes to) | Written; CI result: see the Actions tab |
-| Select and copy text in a PDF: press and hold on a word, drag to extend within the page, tap Copy. **Android 15 and newer only** (uses Android's built-in PDF text support; older phones keep the plain viewer). No scanned-image text. | Implemented, **not yet tested on a device** |
+| Unit tests (format detection, page sizing, zoom, card text and ordering, default-app detection logic, page-coordinate and handle/menu placement maths for text selection, which screen Back goes to) | Written; CI result: see the Actions tab |
+| Select text in a PDF like in any text view: press and hold on a word, drag the two handles to select more or less, tap elsewhere to clear. A small menu offers Select all (the page's text) and Copy. **Android 15 and newer only** (uses Android's built-in PDF text support; older phones keep the plain viewer). No scanned-image text. | Implemented, **not yet tested on a device** |
 | Text search, selecting across pages, password-protected PDFs | Not implemented |
 | Annotate / edit PDFs | Not implemented (planned) |
 | Word (.doc/.docx) viewing and editing | Not implemented (planned) |

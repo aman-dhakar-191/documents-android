@@ -16,9 +16,9 @@ interface Document : AutoCloseable {
     suspend fun renderPage(index: Int, widthPx: Int): Bitmap
 
     /**
-     * The text between [start] and [stop] on page [pageIndex]. If both are the same spot, the word
-     * there. Null when there is no text there, or when [supportsTextSelection] is false.
-     * Throws [IllegalStateException] if the document was closed.
+     * The text between [start] and [stop] on page [pageIndex]; the ends may be given in either
+     * order. If both are the same spot, the word there. Null when there is no text there, or when
+     * [supportsTextSelection] is false. Throws [IllegalStateException] if the document was closed.
      */
-    suspend fun selectText(pageIndex: Int, start: NormPoint, stop: NormPoint): PageText?
+    suspend fun selectText(pageIndex: Int, start: TextEdge, stop: TextEdge): PageText?
 }
