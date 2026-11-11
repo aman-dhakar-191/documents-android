@@ -14,7 +14,7 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    text API that Android added in 15 (API 35), reached through the same `PdfRenderer`, so there is
    still no third-party PDF library; phones older than Android 15 have no text selection. The owner
    chose this over adding a library (PdfBox-Android, or MuPDF whose AGPL licence would apply to the
-   whole app). Selection works like standard text selection (long press, two draggable handles, a floating Select all / Copy menu, tap elsewhere to clear) and stays on one page; Select all means all the text on that page. Scanned PDFs have no text to select.
+   whole app). Selection works like standard text selection (long press, two draggable handles, a floating Select all / Share / Copy menu, tap elsewhere to clear) and stays on one page; Select all means all the text on that page. Scanned PDFs have no text to select.
 4. **Permissions.** Opening one PDF (system picker, or another app's "open with") needs none.
    The library screen, which lists every PDF on the phone as a card, needs to see other apps'
    files, so the manifest asks for `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+,
@@ -32,6 +32,10 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    universal APK per release (the store takes the first `.apk` asset).
 7. **Build oracle**: the Android SDK isn't available in the cloud dev sandbox, so GitHub Actions
    decides whether it builds and tests pass.
+8. **Sharing**: PDFs (one from the reading screen, several from the library) and selected text go
+   through Android's share sheet. Files are handed over as `content://` addresses with a temporary
+   read grant to the receiving app, so no permission is added. `file://` paths are refused, because
+   they would crash the app on Android 7 and newer.
 
 ## Phases
 | Phase | Scope | Status |

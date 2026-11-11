@@ -62,6 +62,7 @@ import io.github.amandhakar.documents.document.PageText
 import io.github.amandhakar.documents.document.SelectionLayout
 import io.github.amandhakar.documents.document.TextEdge
 import io.github.amandhakar.documents.document.Zoom
+import io.github.amandhakar.documents.share.ShareFiles
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -74,7 +75,7 @@ import kotlin.math.roundToInt
  *
  * Where the phone supports it (Android 15+), text can be selected like in any text view: press and
  * hold on a word, then drag the two handles to select more or less. A small menu offers Select all
- * (all the text on that page) and Copy, and tapping anywhere else clears the selection.
+ * (all the text on that page), Share and Copy, and tapping anywhere else clears the selection.
  */
 @Composable
 fun PageList(
@@ -241,6 +242,7 @@ private fun PageImage(
                 showMenu = !holding,
                 onEdges = { start, stop -> select(start, stop) },
                 onSelectAll = { select(TextEdge.At(NormPoint(0f, 0f)), TextEdge.At(NormPoint(1f, 1f))) },
+                onShare = { ShareFiles.shareText(context, selection.text) },
                 onCopy = {
                     val clipboard = context.getSystemService(ClipboardManager::class.java)
                     clipboard?.setPrimaryClip(ClipData.newPlainText("PDF text", selection.text))
@@ -263,6 +265,7 @@ private fun BoxScope.SelectionOverlay(
     showMenu: Boolean,
     onEdges: (TextEdge, TextEdge) -> Unit,
     onSelectAll: () -> Unit,
+    onShare: () -> Unit,
     onCopy: () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -327,6 +330,7 @@ private fun BoxScope.SelectionOverlay(
             )
             SelectionMenu(
                 onSelectAll = onSelectAll,
+                onShare = onShare,
                 onCopy = onCopy,
                 modifier = Modifier
                     // Invisible for the first frame, until its size is known and it can be placed.
@@ -338,9 +342,14 @@ private fun BoxScope.SelectionOverlay(
     }
 }
 
-/** The small floating menu above the selection: Select all and Copy. */
+/** The small floating menu above the selection: Select all, Share and Copy. */
 @Composable
-private fun SelectionMenu(onSelectAll: () -> Unit, onCopy: () -> Unit, modifier: Modifier = Modifier) {
+private fun SelectionMenu(
+    onSelectAll: () -> Unit,
+    onShare: () -> Unit,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.small,
@@ -349,6 +358,7 @@ private fun SelectionMenu(onSelectAll: () -> Unit, onCopy: () -> Unit, modifier:
     ) {
         Row {
             TextButton(onClick = onSelectAll) { Text("Select all") }
+            TextButton(onClick = onShare) { Text("Share") }
             TextButton(onClick = onCopy) { Text("Copy") }
         }
     }

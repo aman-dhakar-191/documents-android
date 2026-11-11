@@ -54,6 +54,9 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** The address of the document being read or loading, or null when none is open. */
+    fun openUri(): Uri? = currentUri
+
     /** Closes the open document (or a failed / loading one) and goes back to the library. */
     fun close() {
         job?.cancel()
