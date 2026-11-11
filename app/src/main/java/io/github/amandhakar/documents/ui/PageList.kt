@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -25,12 +26,15 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.magnifier
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -42,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -52,6 +57,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -153,6 +159,7 @@ fun PageList(
 /** Text selected on page [page] (0-based). */
 private data class SelectedText(val page: Int, val text: PageText)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageImage(
     document: Document,
@@ -183,6 +190,8 @@ private fun PageImage(
     var pageSize by remember { mutableStateOf(IntSize.Zero) }
     // True while a finger is still down from the long press: the menu waits until it lifts.
     var holding by remember { mutableStateOf(false) }
+    // The spot (in this page's pixels) the magnifier bubble shows, or Unspecified for no bubble.
+    var loupe by remember { mutableStateOf(Offset.Unspecified) }
 
     fun norm(p: Offset) = NormPoint(PageGeometry.fraction(p.x, pageSize.width), PageGeometry.fraction(p.y, pageSize.height))
 
@@ -205,6 +214,17 @@ private fun PageImage(
         Modifier
             .fillMaxWidth()
             .onSizeChanged { pageSize = it }
+            // A magnifier bubble above the finger while selecting, so the edge of the selection can be seen.
+            .magnifier(
+                sourceCenter = { loupe },
+                magnifierCenter = {
+                    if (loupe.isSpecified) Offset(loupe.x, loupe.y - 80.dp.toPx()) else Offset.Unspecified
+                },
+                zoom = 1.6f,
+                size = DpSize(128.dp, 56.dp),
+                cornerRadius = 14.dp,
+                elevation = 4.dp,
+            )
             .then(
                 if (document.supportsTextSelection) {
                     Modifier.pointerInput(document, index) {
@@ -218,10 +238,17 @@ private fun PageImage(
                             },
                             onDrag = { change, _ ->
                                 change.consume()
+                                loupe = change.position
                                 select(TextEdge.At(norm(anchor)), TextEdge.At(norm(change.position)))
                             },
-                            onDragEnd = { holding = false },
-                            onDragCancel = { holding = false },
+                            onDragEnd = {
+                                holding = false
+                                loupe = Offset.Unspecified
+                            },
+                            onDragCancel = {
+                                holding = false
+                                loupe = Offset.Unspecified
+                            },
                         )
                     }
                 } else {
@@ -243,6 +270,7 @@ private fun PageImage(
                 onEdges = { start, stop -> select(start, stop) },
                 onSelectAll = { select(TextEdge.At(NormPoint(0f, 0f)), TextEdge.At(NormPoint(1f, 1f))) },
                 onShare = { ShareFiles.shareText(context, selection.text) },
+                onLoupe = { loupe = it },
                 onCopy = {
                     val clipboard = context.getSystemService(ClipboardManager::class.java)
                     clipboard?.setPrimaryClip(ClipData.newPlainText("PDF text", selection.text))
@@ -257,7 +285,14 @@ private val HandleSize = 44.dp
 private val HandleRadius = 9.dp
 private val HandleColor = Color(0xFF3390FF)
 
-/** The highlight, the two handles and the floating menu for [selection], drawn over one page. */
+/** Which handle is being dragged. */
+private enum class HandleSide { Start, End }
+
+/**
+ * The highlight, the two handles and the floating menu for [selection], drawn over one page.
+ * While a handle is dragged, [onLoupe] is told where to show the magnifier (and told
+ * [Offset.Unspecified] when it should go away).
+ */
 @Composable
 private fun BoxScope.SelectionOverlay(
     selection: PageText,
@@ -266,6 +301,7 @@ private fun BoxScope.SelectionOverlay(
     onEdges: (TextEdge, TextEdge) -> Unit,
     onSelectAll: () -> Unit,
     onShare: () -> Unit,
+    onLoupe: (Offset) -> Unit,
     onCopy: () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -284,7 +320,7 @@ private fun BoxScope.SelectionOverlay(
         }
     }
 
-    var dragging by remember { mutableStateOf(false) }
+    var active by remember { mutableStateOf<HandleSide?>(null) }
     // The end that stays where it is while the other one is dragged.
     val fixed = remember { arrayOfNulls<TextEdge>(1) }
 
@@ -293,10 +329,13 @@ private fun BoxScope.SelectionOverlay(
             tip = px(tip),
             onDragStart = {
                 fixed[0] = selection.stop
-                dragging = true
+                active = HandleSide.Start
             },
             onDrag = { target -> fixed[0]?.let { onEdges(TextEdge.At(norm(target)), it) } },
-            onDragEnd = { dragging = false },
+            onDragEnd = {
+                active = null
+                onLoupe(Offset.Unspecified)
+            },
         )
     }
     SelectionLayout.endTip(selection.bounds)?.let { tip ->
@@ -304,14 +343,31 @@ private fun BoxScope.SelectionOverlay(
             tip = px(tip),
             onDragStart = {
                 fixed[0] = selection.start
-                dragging = true
+                active = HandleSide.End
             },
             onDrag = { target -> fixed[0]?.let { onEdges(it, TextEdge.At(norm(target))) } },
-            onDragEnd = { dragging = false },
+            onDragEnd = {
+                active = null
+                onLoupe(Offset.Unspecified)
+            },
         )
     }
 
-    if (showMenu && !dragging) {
+    // While a handle is dragged, magnify the text at the edge of the selection (not under the finger).
+    val loupeSource = when (active) {
+        HandleSide.Start -> SelectionLayout.startAnchor(selection.bounds)?.let { px(it) }
+        HandleSide.End -> SelectionLayout.endAnchor(selection.bounds)?.let { px(it) }
+        null -> null
+    }
+    LaunchedEffect(active, loupeSource) {
+        if (loupeSource != null) onLoupe(loupeSource)
+    }
+    val currentOnLoupe by rememberUpdatedState(onLoupe)
+    DisposableEffect(Unit) {
+        onDispose { currentOnLoupe(Offset.Unspecified) }
+    }
+
+    if (showMenu && active == null) {
         val top = SelectionLayout.top(selection.bounds)
         val bottom = SelectionLayout.bottom(selection.bounds)
         val centerX = SelectionLayout.centerX(selection.bounds)

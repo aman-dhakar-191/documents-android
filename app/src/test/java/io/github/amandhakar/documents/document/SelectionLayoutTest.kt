@@ -31,6 +31,17 @@ class SelectionLayoutTest {
         assertEquals(0.30f, SelectionLayout.centerX(twoLines)!!, 0.0001f)
     }
 
+    @Test fun magnifierFollowsTheStartOfTheFirstLineHalfwayUp() =
+        assertPoint(0.1f, 0.225f, SelectionLayout.startAnchor(twoLines))
+
+    @Test fun magnifierFollowsTheEndOfTheLastLineHalfwayUp() =
+        assertPoint(0.4f, 0.325f, SelectionLayout.endAnchor(twoLines))
+
+    @Test fun nothingSelectedGivesNoMagnifierSpot() {
+        assertNull(SelectionLayout.startAnchor(emptyList()))
+        assertNull(SelectionLayout.endAnchor(emptyList()))
+    }
+
     @Test fun nothingSelectedGivesNoPositions() {
         assertNull(SelectionLayout.startTip(emptyList()))
         assertNull(SelectionLayout.endTip(emptyList()))
