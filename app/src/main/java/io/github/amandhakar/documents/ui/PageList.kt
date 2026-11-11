@@ -159,6 +159,9 @@ fun PageList(
 /** Text selected on page [page] (0-based). */
 private data class SelectedText(val page: Int, val text: PageText)
 
+/** A request for the text between two ends of a selection. */
+private class SelectRequest(val start: TextEdge, val stop: TextEdge)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageImage(
@@ -186,7 +189,20 @@ private fun PageImage(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val latest = remember { LatestJob() }
+    // Lookups wait in a queue that keeps only the newest, so a fast drag can't build up a backlog.
+    val requests = remember { LatestRequests<SelectRequest>() }
+    LaunchedEffect(document, index, requests) {
+        requests.process { request ->
+            val result = try {
+                document.selectText(index, request.start, request.stop)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null // e.g. the document was closed meanwhile, or an end from another page
+            }
+            if (result != null) onSelectionChange(SelectedText(index, result))
+        }
+    }
     var pageSize by remember { mutableStateOf(IntSize.Zero) }
     // True while a finger is still down from the long press: the menu waits until it lifts.
     var holding by remember { mutableStateOf(false) }
@@ -195,19 +211,9 @@ private fun PageImage(
 
     fun norm(p: Offset) = NormPoint(PageGeometry.fraction(p.x, pageSize.width), PageGeometry.fraction(p.y, pageSize.height))
 
-    // Looks up the text between two ends and shows it. A newer request replaces an older one.
+    // Asks for the text between two ends. A newer request replaces one still waiting.
     fun select(start: TextEdge, stop: TextEdge) {
-        latest.job?.cancel()
-        latest.job = scope.launch {
-            val result = try {
-                document.selectText(index, start, stop)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                null // e.g. the document was closed meanwhile, or an end from another page
-            }
-            if (result != null) onSelectionChange(SelectedText(index, result))
-        }
+        requests.submit(SelectRequest(start, stop))
     }
 
     Box(
@@ -321,47 +327,55 @@ private fun BoxScope.SelectionOverlay(
     }
 
     var active by remember { mutableStateOf<HandleSide?>(null) }
+    // Where the dragged handle is under the finger right now. The selection itself catches up a moment
+    // later (looking up text takes time), so the handle and the magnifier follow this instead of it.
+    var dragTarget by remember { mutableStateOf<Offset?>(null) }
     // The end that stays where it is while the other one is dragged.
     val fixed = remember { arrayOfNulls<TextEdge>(1) }
 
     SelectionLayout.startTip(selection.bounds)?.let { tip ->
+        val half = (SelectionLayout.startLineHeight(selection.bounds) ?: 0f) * heightPx / 2f
         SelectionHandle(
-            tip = px(tip),
+            tip = if (active == HandleSide.Start) dragTarget ?: px(tip) else px(tip),
             onDragStart = {
                 fixed[0] = selection.stop
                 active = HandleSide.Start
+                dragTarget = px(tip)
             },
-            onDrag = { target -> fixed[0]?.let { onEdges(TextEdge.At(norm(target)), it) } },
+            onDrag = { target ->
+                dragTarget = target
+                onLoupe(Offset(target.x, target.y - half)) // the middle of the line the handle is under
+                fixed[0]?.let { onEdges(TextEdge.At(norm(target)), it) }
+            },
             onDragEnd = {
                 active = null
+                dragTarget = null
                 onLoupe(Offset.Unspecified)
             },
         )
     }
     SelectionLayout.endTip(selection.bounds)?.let { tip ->
+        val half = (SelectionLayout.endLineHeight(selection.bounds) ?: 0f) * heightPx / 2f
         SelectionHandle(
-            tip = px(tip),
+            tip = if (active == HandleSide.End) dragTarget ?: px(tip) else px(tip),
             onDragStart = {
                 fixed[0] = selection.start
                 active = HandleSide.End
+                dragTarget = px(tip)
             },
-            onDrag = { target -> fixed[0]?.let { onEdges(it, TextEdge.At(norm(target))) } },
+            onDrag = { target ->
+                dragTarget = target
+                onLoupe(Offset(target.x, target.y - half))
+                fixed[0]?.let { onEdges(it, TextEdge.At(norm(target))) }
+            },
             onDragEnd = {
                 active = null
+                dragTarget = null
                 onLoupe(Offset.Unspecified)
             },
         )
     }
 
-    // While a handle is dragged, magnify the text at the edge of the selection (not under the finger).
-    val loupeSource = when (active) {
-        HandleSide.Start -> SelectionLayout.startAnchor(selection.bounds)?.let { px(it) }
-        HandleSide.End -> SelectionLayout.endAnchor(selection.bounds)?.let { px(it) }
-        null -> null
-    }
-    LaunchedEffect(active, loupeSource) {
-        if (loupeSource != null) onLoupe(loupeSource)
-    }
     val currentOnLoupe by rememberUpdatedState(onLoupe)
     DisposableEffect(Unit) {
         onDispose { currentOnLoupe(Offset.Unspecified) }
@@ -467,9 +481,4 @@ private fun SelectionHandle(
             drawCircle(HandleColor, radius, Offset(centerX, knobY))
         }
     }
-}
-
-/** Holds the selection lookup in progress, so a newer drag position replaces an older one. */
-private class LatestJob {
-    var job: Job? = null
 }

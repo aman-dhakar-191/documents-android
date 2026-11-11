@@ -31,15 +31,15 @@ class SelectionLayoutTest {
         assertEquals(0.30f, SelectionLayout.centerX(twoLines)!!, 0.0001f)
     }
 
-    @Test fun magnifierFollowsTheStartOfTheFirstLineHalfwayUp() =
-        assertPoint(0.1f, 0.225f, SelectionLayout.startAnchor(twoLines))
+    @Test fun lineHeightsOfTheFirstAndLastLines() {
+        val lines = listOf(NormRect(0.1f, 0.20f, 0.5f, 0.26f), NormRect(0.1f, 0.30f, 0.4f, 0.33f))
+        assertEquals(0.06f, SelectionLayout.startLineHeight(lines)!!, 0.0001f)
+        assertEquals(0.03f, SelectionLayout.endLineHeight(lines)!!, 0.0001f)
+    }
 
-    @Test fun magnifierFollowsTheEndOfTheLastLineHalfwayUp() =
-        assertPoint(0.4f, 0.325f, SelectionLayout.endAnchor(twoLines))
-
-    @Test fun nothingSelectedGivesNoMagnifierSpot() {
-        assertNull(SelectionLayout.startAnchor(emptyList()))
-        assertNull(SelectionLayout.endAnchor(emptyList()))
+    @Test fun nothingSelectedGivesNoLineHeights() {
+        assertNull(SelectionLayout.startLineHeight(emptyList()))
+        assertNull(SelectionLayout.endLineHeight(emptyList()))
     }
 
     @Test fun nothingSelectedGivesNoPositions() {

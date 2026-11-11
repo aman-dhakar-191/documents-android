@@ -34,12 +34,25 @@ internal class PdfDocument(
 
     override val pageCount: Int = renderer.pageCount
 
+    // The page kept open for text selection, so dragging a handle doesn't reopen it on every move.
+    // PdfRenderer allows only one open page, so anything else that opens a page closes this first.
+    // Only touched while holding [lock].
+    private var selectionPage: PdfRenderer.Page? = null
+    private var selectionPageIndex = -1
+
+    private fun closeSelectionPage() {
+        selectionPage?.close()
+        selectionPage = null
+        selectionPageIndex = -1
+    }
+
     // Android's PDF renderer gained text selection in Android 15 (API 35).
     override val supportsTextSelection: Boolean = Build.VERSION.SDK_INT >= 35
 
     override suspend fun renderPage(index: Int, widthPx: Int): Bitmap = withContext(Dispatchers.IO) {
         synchronized(lock) {
             check(!closed) { "document is closed" }
+            closeSelectionPage()
             val page = renderer.openPage(index)
             try {
                 val size = PageSizing.bitmapSize(page.width, page.height, widthPx)
@@ -62,8 +75,15 @@ internal class PdfDocument(
     private fun selectTextApi35(pageIndex: Int, start: TextEdge, stop: TextEdge): PageText? =
         synchronized(lock) {
             check(!closed) { "document is closed" }
-            val page = renderer.openPage(pageIndex)
-            try {
+            val page = selectionPage?.takeIf { selectionPageIndex == pageIndex }
+                ?: run {
+                    closeSelectionPage()
+                    renderer.openPage(pageIndex).also {
+                        selectionPage = it
+                        selectionPageIndex = pageIndex
+                    }
+                }
+            run {
                 val width = page.width
                 val height = page.height
                 fun boundary(edge: TextEdge): SelectionBoundary = when (edge) {
@@ -89,8 +109,6 @@ internal class PdfDocument(
                 val last = selection.stop
                 val (earlier, later) = if (first.index <= last.index) first to last else last to first
                 PageText(text, bounds, TextEdge.Kept(earlier), TextEdge.Kept(later))
-            } finally {
-                page.close()
             }
         }
 
@@ -98,6 +116,7 @@ internal class PdfDocument(
         synchronized(lock) {
             if (closed) return
             closed = true
+            closeSelectionPage() // the renderer refuses to close while a page is open
             renderer.close()
             fd.close()
         }
