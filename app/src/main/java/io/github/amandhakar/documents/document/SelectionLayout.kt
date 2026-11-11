@@ -14,6 +14,17 @@ object SelectionLayout {
     /** The end handle sits under the end of the last line. */
     fun endTip(bounds: List<NormRect>): NormPoint? = bounds.lastOrNull()?.let { NormPoint(it.right, it.bottom) }
 
+    /**
+     * The spot at the start of the first line, halfway up the text: what the magnifier shows while
+     * the start handle is dragged (the handle itself is below the line, where the finger covers it).
+     */
+    fun startAnchor(bounds: List<NormRect>): NormPoint? =
+        bounds.firstOrNull()?.let { NormPoint(it.left, (it.top + it.bottom) / 2f) }
+
+    /** The spot at the end of the last line, halfway up the text: what the magnifier shows for the end handle. */
+    fun endAnchor(bounds: List<NormRect>): NormPoint? =
+        bounds.lastOrNull()?.let { NormPoint(it.right, (it.top + it.bottom) / 2f) }
+
     fun top(bounds: List<NormRect>): Float? = bounds.minOfOrNull { it.top }
 
     fun bottom(bounds: List<NormRect>): Float? = bounds.maxOfOrNull { it.bottom }
