@@ -53,22 +53,29 @@ internal class PdfDocument(
         }
     }
 
-    override suspend fun selectText(pageIndex: Int, start: NormPoint, stop: NormPoint): PageText? =
+    override suspend fun selectText(pageIndex: Int, start: TextEdge, stop: TextEdge): PageText? =
         withContext(Dispatchers.IO) {
             if (Build.VERSION.SDK_INT >= 35) selectTextApi35(pageIndex, start, stop) else null
         }
 
     @RequiresApi(35)
-    private fun selectTextApi35(pageIndex: Int, start: NormPoint, stop: NormPoint): PageText? =
+    private fun selectTextApi35(pageIndex: Int, start: TextEdge, stop: TextEdge): PageText? =
         synchronized(lock) {
             check(!closed) { "document is closed" }
             val page = renderer.openPage(pageIndex)
             try {
                 val width = page.width
                 val height = page.height
-                fun boundary(p: NormPoint) = SelectionBoundary(
-                    Point(PageGeometry.toPoints(p.x, width), PageGeometry.toPoints(p.y, height)),
-                )
+                fun boundary(edge: TextEdge): SelectionBoundary = when (edge) {
+                    is TextEdge.At -> SelectionBoundary(
+                        Point(
+                            PageGeometry.toPoints(edge.point.x, width),
+                            PageGeometry.toPoints(edge.point.y, height),
+                        ),
+                    )
+                    // An end from an earlier selection, passed back exactly as Android gave it.
+                    is TextEdge.Kept -> edge.token as SelectionBoundary
+                }
                 val selection = page.selectContent(boundary(start), boundary(stop))
                     ?: return@synchronized null
                 val contents = selection.selectedTextContents
@@ -77,7 +84,11 @@ internal class PdfDocument(
                 val bounds = contents.flatMap { it.bounds }.map {
                     PageGeometry.normalize(it.left, it.top, it.right, it.bottom, width, height)
                 }
-                PageText(text, bounds)
+                // Keep the ends in reading order, so the first handle is always the earlier one.
+                val first = selection.start
+                val last = selection.stop
+                val (earlier, later) = if (first.index <= last.index) first to last else last to first
+                PageText(text, bounds, TextEdge.Kept(earlier), TextEdge.Kept(later))
             } finally {
                 page.close()
             }

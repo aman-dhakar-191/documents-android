@@ -8,7 +8,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -37,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -63,6 +69,7 @@ fun LibraryScreen(
     onOpen: (Uri) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
+    val selected by viewModel.selected.collectAsState()
     val context = LocalContext.current
 
     // Android 10 and older ask with a normal permission dialog.
@@ -119,7 +126,14 @@ fun LibraryScreen(
                     }
                 }
                 items(s.files, key = { it.id }) { file ->
-                    PdfCard(file, onClick = { onOpen(file.uri) })
+                    PdfCard(
+                        file = file,
+                        selected = file.id in selected,
+                        selecting = selected.isNotEmpty(),
+                        // Once something is ticked, tapping ticks or unticks; otherwise it opens the PDF.
+                        onClick = { if (selected.isNotEmpty()) viewModel.toggleSelected(file.id) else onOpen(file.uri) },
+                        onLongClick = { viewModel.toggleSelected(file.id) },
+                    )
                 }
             }
         }
@@ -158,10 +172,25 @@ private fun DefaultAppCard(app: DefaultPdfApp, samplePdf: Uri) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PdfCard(file: PdfFile, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Thumbnail(file, Modifier.fillMaxWidth().aspectRatio(1f / 1.414f))
+private fun PdfCard(
+    file: PdfFile,
+    selected: Boolean,
+    selecting: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val ring = if (selected) {
+        Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
+    } else {
+        Modifier
+    }
+    Card(Modifier.fillMaxWidth().then(ring).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
+        Box {
+            Thumbnail(file, Modifier.fillMaxWidth().aspectRatio(1f / 1.414f))
+            if (selecting) SelectBadge(selected, Modifier.align(Alignment.TopEnd).padding(8.dp))
+        }
         Column(Modifier.padding(10.dp)) {
             Text(
                 PdfFiles.title(file.name),
@@ -179,6 +208,22 @@ private fun PdfCard(file: PdfFile, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** The round tick box in a card's corner while choosing PDFs: filled with a tick when chosen. */
+@Composable
+private fun SelectBadge(selected: Boolean, modifier: Modifier = Modifier) {
+    val primary = MaterialTheme.colorScheme.primary
+    Box(
+        modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(if (selected) primary else Color.White.copy(alpha = 0.85f))
+            .border(2.dp, primary, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) Text("✓", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelMedium)
     }
 }
 

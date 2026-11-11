@@ -3,6 +3,7 @@ package io.github.amandhakar.documents
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.library.PdfFile
 import io.github.amandhakar.documents.library.PdfLibrary
 import io.github.amandhakar.documents.library.StorageAccess
@@ -11,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -25,7 +27,23 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<LibraryState>(LibraryState.Loading)
     val state: StateFlow<LibraryState> = _state
 
+    // The PDFs ticked in the list. Lives here so it survives turning the phone.
+    private val _selected = MutableStateFlow<Set<Long>>(emptySet())
+    val selected: StateFlow<Set<Long>> = _selected
+
     private var job: Job? = null
+
+    fun toggleSelected(id: Long) {
+        _selected.update { MultiSelect.toggle(it, id) }
+    }
+
+    fun clearSelection() {
+        _selected.value = emptySet()
+    }
+
+    fun selectAll() {
+        (_state.value as? LibraryState.Ready)?.let { _selected.value = MultiSelect.all(it.files) }
+    }
 
     /** Re-checks permission and re-reads the list. The old list stays on screen while it loads. */
     fun refresh() {
@@ -38,7 +56,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (_state.value !is LibraryState.Ready) _state.value = LibraryState.Loading
             _state.value = try {
-                LibraryState.Ready(withContext(Dispatchers.IO) { PdfLibrary.load(context) })
+                val files = withContext(Dispatchers.IO) { PdfLibrary.load(context) }
+                _selected.update { MultiSelect.prune(it, files.map { file -> file.id }) }
+                LibraryState.Ready(files)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

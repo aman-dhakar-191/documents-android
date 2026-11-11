@@ -1,12 +1,15 @@
 package io.github.amandhakar.documents.ui
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -27,13 +30,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.amandhakar.documents.DocumentViewModel
+import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
+import io.github.amandhakar.documents.library.MultiSelect
+import io.github.amandhakar.documents.share.ShareFiles
 import kotlin.math.roundToInt
 
 /** A PDF another app asked us to open. [serial] makes a repeat request for the same file count as new. */
@@ -48,6 +55,9 @@ fun DocumentsApp(
     libraryViewModel: LibraryViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val libraryState by libraryViewModel.state.collectAsState()
+    val selectedIds by libraryViewModel.selected.collectAsState()
+    val context = LocalContext.current
     var zoom by rememberSaveable { mutableStateOf(1f) }
     // Lives here (not in the library screen) so the list keeps its scroll position after reading a PDF.
     val gridState = rememberLazyGridState()
@@ -66,6 +76,7 @@ fun DocumentsApp(
     LaunchedEffect(incoming) {
         if (incoming != null) {
             openedFromOutside = true
+            libraryViewModel.clearSelection()
             viewModel.open(incoming.uri)
         }
     }
@@ -84,10 +95,38 @@ fun DocumentsApp(
     }
     BackHandler(enabled = !inLibrary, onBack = goBack)
 
+    // Choosing PDFs in the list: Back (or Cancel) unticks everything instead of leaving.
+    val selectionActive = inLibrary && selectedIds.isNotEmpty()
+    BackHandler(enabled = selectionActive) { libraryViewModel.clearSelection() }
+
+    val shareChosen: () -> Unit = {
+        val files = MultiSelect.chosen((libraryState as? LibraryState.Ready)?.files.orEmpty(), selectedIds)
+        if (ShareFiles.sharePdfs(context, files.map { it.uri })) {
+            libraryViewModel.clearSelection()
+        } else {
+            Toast.makeText(context, "These files can't be shared.", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val shareOpen: () -> Unit = {
+        val uri = viewModel.openUri()
+        if (uri == null || !ShareFiles.sharePdfs(context, listOf(uri))) {
+            Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     MaterialTheme {
         Scaffold(
             topBar = {
-                if (inLibrary) {
+                if (selectionActive) {
+                    TopAppBar(
+                        title = { Text(MultiSelect.title(selectedIds.size)) },
+                        navigationIcon = { TextButton(onClick = { libraryViewModel.clearSelection() }) { Text("Cancel") } },
+                        actions = {
+                            TextButton(onClick = { libraryViewModel.selectAll() }) { Text("Select all") }
+                            TextButton(onClick = shareChosen) { Text("Share") }
+                        },
+                    )
+                } else if (inLibrary) {
                     TopAppBar(
                         title = { Text("Documents") },
                         actions = {
@@ -102,9 +141,10 @@ fun DocumentsApp(
                         navigationIcon = { TextButton(onClick = goBack) { Text("Back") } },
                         actions = {
                             if (state is ViewerState.Ready) {
-                                TextButton(onClick = { zoom = Zoom.zoomOut(zoom) }, enabled = zoom > Zoom.MIN) { Text("−") }
+                                CompactButton("−", enabled = zoom > Zoom.MIN) { zoom = Zoom.zoomOut(zoom) }
                                 Text("${(zoom * 100).roundToInt()}%")
-                                TextButton(onClick = { zoom = Zoom.zoomIn(zoom) }, enabled = zoom < Zoom.MAX) { Text("+") }
+                                CompactButton("+", enabled = zoom < Zoom.MAX) { zoom = Zoom.zoomIn(zoom) }
+                                TextButton(onClick = shareOpen) { Text("Share") }
                             }
                         },
                     )
@@ -127,6 +167,17 @@ fun DocumentsApp(
             }
         }
     }
+}
+
+/** A text button with less padding, so Back, zoom and Share all fit in the slim reading bar on a narrow phone. */
+@Composable
+private fun CompactButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        modifier = Modifier.defaultMinSize(minWidth = 40.dp),
+    ) { Text(text) }
 }
 
 @Composable
