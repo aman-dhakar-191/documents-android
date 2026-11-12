@@ -6,27 +6,44 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.util.Matrix
 import java.io.File
 import java.io.IOException
 
 /**
- * Puts signature pictures into a PDF with PdfBox-Android. The page's own content is kept as it is
- * (text stays text); the picture is added on top. Blocking: call from a background thread.
+ * Changes a PDF with PdfBox-Android: puts signature pictures on it and covers lines of text with new text.
+ * The page's own content is kept as it is; everything is added on top. Covered text is NOT removed from the
+ * file (it is still there under the box). Blocking: call from a background thread.
  */
 object PdfSigner {
     /**
-     * Reads [input], draws [signature] at every one of [placements] and writes the result to [output].
-     * Throws [IOException] if the PDF can't be read (a password-protected one included) and
-     * [IllegalArgumentException] if a placement names a page the PDF doesn't have.
+     * Reads [input], applies [textEdits] (each covers a line and writes new text), draws [signature] at every
+     * one of [placements] on top, and writes the result to [output]. Throws [IOException] if the PDF can't be
+     * read (a password-protected one included) and [IllegalArgumentException] if something names a page the PDF
+     * doesn't have, there is nothing to do, or a text change uses characters Helvetica can't draw.
      */
-    fun sign(context: Context, input: File, signature: Bitmap, placements: List<PlacedSignature>, output: File) {
-        require(placements.isNotEmpty()) { "nothing to sign" }
+    fun edit(
+        context: Context,
+        input: File,
+        signature: Bitmap?,
+        placements: List<PlacedSignature>,
+        textEdits: List<TextEdit>,
+        output: File,
+    ) {
+        require(placements.isNotEmpty() || textEdits.isNotEmpty()) { "nothing to change" }
+        require(placements.isEmpty() || signature != null) { "no signature picture" }
         PDFBoxResourceLoader.init(context.applicationContext)
         // Scratch files, not memory, for the parts of big documents.
         PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
             require(placements.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
+            require(textEdits.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
+            for (edit in textEdits) drawTextEdit(doc, edit)
+            if (signature == null) {
+                doc.save(output)
+                return
+            }
             val image = LosslessFactory.createFromImage(doc, signature)
             val signatureAspect = signature.width.toFloat() / signature.height
             for (placed in placements) {
@@ -45,6 +62,37 @@ object PdfSigner {
             doc.save(output)
         }
     }
+
+    /** Covers the old line with a box and writes the new text over it (Helvetica; shrunk a little if it is longer). */
+    private fun drawTextEdit(doc: PDDocument, edit: TextEdit) {
+        require(PdfText.unsupported(edit.text).isEmpty()) { "unsupported characters" }
+        val page = doc.getPage(edit.page)
+        require(PdfCoordinates.normalizeRotation(page.rotation) == 0) { "rotated pages can't be edited yet" }
+        val crop = page.cropBox
+        val w = crop.width
+        val h = crop.height
+        val x = crop.lowerLeftX + edit.left * w
+        val boxWidth = edit.width * w
+        val boxHeight = edit.height * h
+        val boxBottom = crop.lowerLeftY + (1f - edit.top) * h - boxHeight
+        PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { content ->
+            content.setNonStrokingColor((edit.cover shr 16) and 0xFF, (edit.cover shr 8) and 0xFF, edit.cover and 0xFF)
+            content.addRect(x - COVER_PAD, boxBottom - COVER_PAD, boxWidth + 2 * COVER_PAD, boxHeight + 2 * COVER_PAD)
+            content.fill()
+            if (edit.text.isNotEmpty()) {
+                val font = PDType1Font.HELVETICA
+                val size = TextFit.size(edit.fontSizePt, boxWidth, font.getStringWidth(edit.text) / 1000f * edit.fontSizePt)
+                content.setNonStrokingColor(0, 0, 0)
+                content.beginText()
+                content.setFont(font, size)
+                content.newLineAtOffset(x, crop.lowerLeftY + (1f - edit.baseline) * h)
+                content.showText(edit.text)
+                content.endText()
+            }
+        }
+    }
+
+    private const val COVER_PAD = 1f
 
     /** True when [file] opens as a PDF with at least one page. Used to check a result before it replaces anything. */
     fun looksValid(context: Context, file: File, expectedPages: Int? = null): Boolean = try {

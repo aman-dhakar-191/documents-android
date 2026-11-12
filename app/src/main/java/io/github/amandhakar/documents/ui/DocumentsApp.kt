@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +23,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -37,6 +40,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +52,7 @@ import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
+import io.github.amandhakar.documents.edit.PdfText
 import io.github.amandhakar.documents.edit.SaveNames
 import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.share.ShareFiles
@@ -114,7 +119,8 @@ fun DocumentsApp(
     val goBack: () -> Unit = {
         when {
             edit.placing != null -> editViewModel.cancelPlacing()
-            edit.placed.isNotEmpty() -> askDiscard = true
+            edit.textMode -> editViewModel.exitTextMode()
+            edit.hasPending -> askDiscard = true
             else -> leaveViewer()
         }
     }
@@ -133,9 +139,12 @@ fun DocumentsApp(
         }
     }
     val sign: () -> Unit = {
+        editViewModel.exitTextMode()
         if (edit.signature == null) editViewModel.openPad() else editViewModel.startPlacing()
     }
     val signatureImage = remember(edit.signature) { edit.signature?.asImageBitmap() }
+    // Stands in for the signature picture when there is none yet (text changes don't need one).
+    val noSignature = remember { ImageBitmap(1, 1) }
 
     // Choosing PDFs in the list: Back (or Cancel) unticks everything instead of leaving.
     val selectionActive = inLibrary && selectedIds.isNotEmpty()
@@ -190,11 +199,45 @@ fun DocumentsApp(
                 },
             )
         }
+        edit.editingLine?.let { target ->
+            var text by remember(target) { mutableStateOf(target.initialText) }
+            val unusable = PdfText.unsupported(PdfText.clean(text))
+            AlertDialog(
+                onDismissRequest = { editViewModel.cancelLineEdit() },
+                title = { Text("Change text") },
+                text = {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = { Text("New text") },
+                        isError = unusable.isNotEmpty(),
+                        supportingText = {
+                            Text(
+                                if (unusable.isEmpty()) {
+                                    "The old text is covered, not erased from the file."
+                                } else {
+                                    "Can't use ${unusable.joinToString(" ")} yet: only Latin letters, digits and common symbols."
+                                },
+                            )
+                        },
+                    )
+                },
+                confirmButton = {
+                    Button(enabled = unusable.isEmpty(), onClick = { editViewModel.applyLineEdit(text) }) { Text("Apply") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = { editViewModel.applyLineEdit("") }) { Text("Remove text") }
+                        TextButton(onClick = { editViewModel.cancelLineEdit() }) { Text("Cancel") }
+                    }
+                },
+            )
+        }
         if (askDiscard) {
             AlertDialog(
                 onDismissRequest = { askDiscard = false },
-                title = { Text("Discard signatures?") },
-                text = { Text("You haven't saved the signatures you added.") },
+                title = { Text("Discard changes?") },
+                text = { Text("You haven't saved the signatures or text changes you made.") },
                 confirmButton = {
                     Button(onClick = {
                         askDiscard = false
@@ -239,7 +282,7 @@ fun DocumentsApp(
                                     IconButton(onClick = sign, enabled = !edit.saving) {
                                         Icon(DocIcons.Edit, contentDescription = "Add signature")
                                     }
-                                    if (edit.placed.isNotEmpty()) {
+                                    if (edit.hasPending) {
                                         IconButton(onClick = { askSaveChoice = true }, enabled = !edit.saving) {
                                             Icon(DocIcons.Save, contentDescription = "Save signed PDF")
                                         }
@@ -257,6 +300,22 @@ fun DocumentsApp(
                                                 shareOpen()
                                             },
                                         )
+                                        DropdownMenuItem(
+                                            text = { Text(if (edit.textMode) "Stop changing text" else "Change text") },
+                                            onClick = {
+                                                menuOpen = false
+                                                if (edit.textMode) editViewModel.exitTextMode() else editViewModel.enterTextMode()
+                                            },
+                                        )
+                                        if (edit.textEdits.isNotEmpty()) {
+                                            DropdownMenuItem(
+                                                text = { Text("Undo last text change") },
+                                                onClick = {
+                                                    menuOpen = false
+                                                    editViewModel.undoLastText()
+                                                },
+                                            )
+                                        }
                                         if (edit.placed.isNotEmpty()) {
                                             DropdownMenuItem(
                                                 text = { Text("Undo last signature") },
@@ -291,24 +350,41 @@ fun DocumentsApp(
                             document = s.document,
                             zoom = zoom,
                             onZoomChange = { zoom = it },
-                            editing = if (image != null && edit.signature != null) {
-                                EditingUi(
-                                    signature = image,
-                                    aspect = edit.signature!!.width.toFloat() / edit.signature!!.height,
-                                    placed = edit.placed,
-                                    placing = edit.placing,
-                                    onPlacingChange = { editViewModel.updatePlacing(it) },
-                                    onPlace = { editViewModel.placeAt(it) },
-                                    onMiss = {
-                                        Toast.makeText(context, "Move the signature over a page first.", Toast.LENGTH_SHORT).show()
-                                    },
-                                    onCancel = { editViewModel.cancelPlacing() },
-                                    onRedraw = { editViewModel.openPad() },
-                                )
-                            } else {
-                                null
-                            },
+                            editing = EditingUi(
+                                signature = image ?: noSignature,
+                                aspect = edit.signature?.let { it.width.toFloat() / it.height } ?: 1f,
+                                placed = edit.placed,
+                                placing = if (image != null) edit.placing else null,
+                                onPlacingChange = { editViewModel.updatePlacing(it) },
+                                onPlace = { editViewModel.placeAt(it) },
+                                onMiss = {
+                                    Toast.makeText(context, "Move the signature over a page first.", Toast.LENGTH_SHORT).show()
+                                },
+                                onCancel = { editViewModel.cancelPlacing() },
+                                onRedraw = { editViewModel.openPad() },
+                                textMode = edit.textMode,
+                                lines = edit.lines,
+                                textEdits = edit.textEdits,
+                                onNeedLines = { page -> viewModel.openUri()?.let { editViewModel.requestLines(page, it) } },
+                                onLineTapped = { page, line, cover -> editViewModel.lineTapped(page, line, cover) },
+                            ),
                         )
+                        if (edit.textMode) {
+                            Surface(
+                                modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
+                                shape = RoundedCornerShape(50),
+                                shadowElevation = 6.dp,
+                                tonalElevation = 3.dp,
+                            ) {
+                                Row(
+                                    Modifier.padding(start = 16.dp, end = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("Tap a line of text to change it")
+                                    TextButton(onClick = { editViewModel.exitTextMode() }) { Text("Done") }
+                                }
+                            }
+                        }
                         if (edit.saving) CircularProgressIndicator(Modifier.align(Alignment.Center))
                     }
                 }
