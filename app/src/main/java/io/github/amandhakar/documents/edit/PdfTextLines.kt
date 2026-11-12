@@ -18,18 +18,31 @@ object PdfTextLines {
         PDFBoxResourceLoader.init(context.applicationContext)
         PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
             require(pageIndex in 0 until doc.numberOfPages) { "no such page" }
-            val page = doc.getPage(pageIndex)
-            val crop = page.cropBox
-            if (PdfCoordinates.normalizeRotation(page.rotation) != 0) {
-                return PageLines(crop.width, crop.height, emptyList(), supported = false)
-            }
-            val collector = WordCollector()
-            collector.sortByPosition = true
-            collector.startPage = pageIndex + 1
-            collector.endPage = pageIndex + 1
-            collector.getText(doc)
-            return PageLines(crop.width, crop.height, LineGrouping.group(collector.words))
+            return readPage(doc, pageIndex)
         }
+    }
+
+    /** The lines of the first [maxPages] pages, opening the PDF once. The second value is how many pages the PDF has. */
+    fun readAll(context: Context, input: File, maxPages: Int): Pair<List<PageLines>, Int> {
+        PDFBoxResourceLoader.init(context.applicationContext)
+        PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+            val total = doc.numberOfPages
+            return (0 until minOf(total, maxPages)).map { readPage(doc, it) } to total
+        }
+    }
+
+    private fun readPage(doc: PDDocument, pageIndex: Int): PageLines {
+        val page = doc.getPage(pageIndex)
+        val crop = page.cropBox
+        if (PdfCoordinates.normalizeRotation(page.rotation) != 0) {
+            return PageLines(crop.width, crop.height, emptyList(), supported = false)
+        }
+        val collector = WordCollector()
+        collector.sortByPosition = true
+        collector.startPage = pageIndex + 1
+        collector.endPage = pageIndex + 1
+        collector.getText(doc)
+        return PageLines(crop.width, crop.height, LineGrouping.group(collector.words))
     }
 
     /** The standard font closest to [font] (from its name and descriptor). */

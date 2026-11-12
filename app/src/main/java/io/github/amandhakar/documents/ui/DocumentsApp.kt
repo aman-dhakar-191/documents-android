@@ -57,6 +57,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.edit.ReaderChrome
+import io.github.amandhakar.documents.convert.ConvertException
+import io.github.amandhakar.documents.convert.ConvertOutcome
+import io.github.amandhakar.documents.convert.PdfConverter
 import io.github.amandhakar.documents.export.ExportNames
 import io.github.amandhakar.documents.export.SlidesPdfExporter
 import io.github.amandhakar.documents.export.WordPdfExporter
@@ -219,6 +222,45 @@ fun DocumentsApp(
             }
         }
     }
+    // Convert the open PDF to Word or PowerPoint: ask how (text or pictures), then where, then write it off the main thread.
+    var convertTarget by remember { mutableStateOf<PdfConverter.Target?>(null) }
+    var convertMode by remember { mutableStateOf(PdfConverter.Mode.Text) }
+    val runConvert: (Uri?, PdfConverter.Target) -> Unit = { destination, kind ->
+        val source = viewModel.openUri()
+        if (destination != null && source != null && !exporting) {
+            exporting = true
+            val mode = convertMode
+            scope.launch {
+                var outcome: ConvertOutcome? = null
+                val failure = withContext(Dispatchers.IO) {
+                    try {
+                        val stream = context.contentResolver.openOutputStream(destination, "w") ?: throw java.io.IOException("Could not write")
+                        stream.use { out -> outcome = PdfConverter.convert(context, source, kind, mode, out) }
+                        null
+                    } catch (e: Throwable) {
+                        e
+                    }
+                }
+                exporting = false
+                if (failure == null) {
+                    val done = outcome
+                    val partial = done != null && done.pagesConverted < done.pagesTotal
+                    Toast.makeText(
+                        context,
+                        if (partial) "Saved. Only the first ${done!!.pagesConverted} of ${done.pagesTotal} pages were converted." else "Saved",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    openOurselves(destination)
+                } else {
+                    val message = (failure as? ConvertException)?.message ?: ExportNames.errorMessage(failure)
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    val toWord = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DocumentFormat.DOCX_MIME)) { runConvert(it, PdfConverter.Target.Word) }
+    val toPowerPoint = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DocumentFormat.PPTX_MIME)) { runConvert(it, PdfConverter.Target.PowerPoint) }
+
     LaunchedEffect(edit.message) {
         edit.message?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
@@ -350,6 +392,18 @@ fun DocumentsApp(
                     editViewModel.startPlacingText(text, zoom, matchNearby, font)
                 },
                 onDismiss = { askNewText = false },
+            )
+        }
+        convertTarget?.let { kind ->
+            ConvertSheet(
+                target = kind,
+                onPick = { mode ->
+                    convertMode = mode
+                    convertTarget = null
+                    val name = displayNameOf(context, viewModel.openUri())
+                    if (kind == PdfConverter.Target.Word) toWord.launch(ExportNames.nameWithExtension(name, ".docx")) else toPowerPoint.launch(ExportNames.nameWithExtension(name, ".pptx"))
+                },
+                onDismiss = { convertTarget = null },
             )
         }
         if (askDiscard) {
@@ -540,6 +594,22 @@ fun DocumentsApp(
                                             onClick = {
                                                 menuOpen = false
                                                 shareOpen()
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Convert to Word\u2026") },
+                                            enabled = !exporting,
+                                            onClick = {
+                                                menuOpen = false
+                                                convertTarget = PdfConverter.Target.Word
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Convert to PowerPoint\u2026") },
+                                            enabled = !exporting,
+                                            onClick = {
+                                                menuOpen = false
+                                                convertTarget = PdfConverter.Target.PowerPoint
                                             },
                                         )
                                         if (edit.marks.isNotEmpty()) {
