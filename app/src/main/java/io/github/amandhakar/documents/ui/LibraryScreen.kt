@@ -37,12 +37,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -79,6 +81,7 @@ fun LibraryScreen(
     val state by viewModel.state.collectAsState()
     val selected by viewModel.selected.collectAsState()
     val filter by viewModel.filter.collectAsState()
+    val query by viewModel.query.collectAsState()
     val context = LocalContext.current
 
     // Android 10 and older ask with a normal permission dialog.
@@ -138,11 +141,11 @@ fun LibraryScreen(
                         DefaultAppCard(defaultApp, samplePdf.uri)
                     }
                 }
-                val shown = LibraryFilters.apply(s.files, filter)
+                val shown = LibraryFilters.apply(s.files, filter, query)
                 if (shown.isEmpty()) {
                     item(key = "none", span = { GridItemSpan(maxLineSpan) }) {
                         Text(
-                            "No ${filter.label.lowercase()} found.",
+                            if (query.isBlank()) "No ${filter.label.lowercase()} found." else "Nothing matches \"${query.trim()}\".",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp),
@@ -181,32 +184,44 @@ private fun FilterRow(selected: LibraryFilter, counts: Map<LibraryFilter, Int>, 
     }
 }
 
-/** Explains how to make Documents the app that opens PDFs from other apps, and takes you there. */
+/** One slim row that offers to make Documents the app that opens PDFs from other apps; "Set up" shows the steps. */
 @Composable
 private fun DefaultAppCard(app: DefaultPdfApp, samplePdf: Uri) {
     val context = LocalContext.current
+    var open by rememberSaveable { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Make Documents your default PDF app", style = MaterialTheme.typography.titleMedium)
-            val otherPackage = app.packageName
-            if (app.kind == DefaultKind.Other && otherPackage != null) {
-                val name = app.label ?: "another app"
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = if (open) 16.dp else 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "PDFs you open from other apps currently go to $name. To change that, open its " +
-                        "settings, tap \"Open by default\" (or \"Set as default\"), then \"Clear defaults\". " +
-                        "Next time you open a PDF, choose Documents and tap Always.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    "Make Documents your default PDF app",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
                 )
-                Button(onClick = { DefaultPdfApps.openAppSettings(context, otherPackage) }) {
-                    Text("Open $name settings")
-                }
-            } else {
-                Text(
-                    "No app is set for PDFs yet. Tap the button, choose Documents, then tap Always.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Button(onClick = { DefaultPdfApps.askWhichToUse(context, samplePdf) }) {
-                    Text("Choose default app")
+                TextButton(onClick = { open = !open }) { Text(if (open) "Hide" else "Set up") }
+            }
+            if (open) {
+                Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val otherPackage = app.packageName
+                    if (app.kind == DefaultKind.Other && otherPackage != null) {
+                        val name = app.label ?: "another app"
+                        Text(
+                            "PDFs you open from other apps currently go to $name. To change that, open its " +
+                                "settings, tap \"Open by default\" (or \"Set as default\"), then \"Clear defaults\". " +
+                                "Next time you open a PDF, choose Documents and tap Always.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = { DefaultPdfApps.openAppSettings(context, otherPackage) }) {
+                            Text("Open $name settings")
+                        }
+                    } else {
+                        Text(
+                            "No app is set for PDFs yet. Tap the button, choose Documents, then tap Always.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = { DefaultPdfApps.askWhichToUse(context, samplePdf) }) {
+                            Text("Choose default app")
+                        }
+                    }
                 }
             }
         }
