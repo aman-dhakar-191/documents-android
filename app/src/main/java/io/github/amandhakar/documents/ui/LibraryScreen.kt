@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.PaddingValues
@@ -82,6 +84,7 @@ fun LibraryScreen(
     val selected by viewModel.selected.collectAsState()
     val filter by viewModel.filter.collectAsState()
     val query by viewModel.query.collectAsState()
+    val sort by viewModel.sort.collectAsState()
     val context = LocalContext.current
 
     // Android 10 and older ask with a normal permission dialog.
@@ -141,7 +144,7 @@ fun LibraryScreen(
                         DefaultAppCard(defaultApp, samplePdf.uri)
                     }
                 }
-                val shown = LibraryFilters.apply(s.files, filter, query)
+                val shown = LibraryFilters.apply(s.files, filter, query, sort)
                 if (shown.isEmpty()) {
                     item(key = "none", span = { GridItemSpan(maxLineSpan) }) {
                         Text(
@@ -167,11 +170,12 @@ fun LibraryScreen(
     }
 }
 
-/** The chips that pick which kind of file to list: All, PDF, Web pages (each with how many there are). */
+/** The chips that pick which kind of file to list: All, PDF, Web pages, Word, PowerPoint (each with how many there are). They wrap onto more lines rather than hiding off to the side. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterRow(selected: LibraryFilter, counts: Map<LibraryFilter, Int>, onPick: (LibraryFilter) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+    FlowRow(
+        Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         for (filter in LibraryFilter.entries) {

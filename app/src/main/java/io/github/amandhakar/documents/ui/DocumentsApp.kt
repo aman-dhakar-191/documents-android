@@ -95,6 +95,7 @@ fun DocumentsApp(
     val selectedIds by libraryViewModel.selected.collectAsState()
     val edit by editViewModel.state.collectAsState()
     val query by libraryViewModel.query.collectAsState()
+    val librarySort by libraryViewModel.sort.collectAsState()
     var searching by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     var zoom by rememberSaveable { mutableStateOf(1f) }
@@ -338,6 +339,8 @@ fun DocumentsApp(
                         onQuery = { libraryViewModel.setQuery(it) },
                         onSearch = { searching = true },
                         onCloseSearch = closeSearch,
+                        sort = librarySort,
+                        onSort = { libraryViewModel.setSort(it) },
                         onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME)) },
                     )
                 } else if (state is ViewerState.Web && findOpen) {

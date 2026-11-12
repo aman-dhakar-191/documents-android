@@ -70,3 +70,43 @@ class LibrarySearchTest {
     @Test fun surroundingSpacesAreIgnored() = assertEquals(listOf(1L), ids("  train  "))
     @Test fun queryCharactersAreNotPatterns() = assertEquals(emptyList<Long>(), ids(".*"))
 }
+
+class SortingTest {
+    private fun f(id: Long, name: String, modified: Long, size: Long, format: io.github.amandhakar.documents.document.DocumentFormat = io.github.amandhakar.documents.document.DocumentFormat.Pdf) =
+        PdfFile(id = id, name = name, folder = "", sizeBytes = size, modifiedSeconds = modified, format = format)
+
+    private val files = listOf(
+        f(1, "banana.pdf", 300, 50),
+        f(2, "Apple.pdf", 100, 900),
+        f(3, "cherry.docx", 200, 10, io.github.amandhakar.documents.document.DocumentFormat.Docx),
+        f(4, "apple notes.pdf", 100, 900),
+    )
+
+    private fun ids(order: SortOrder) = Sorting.sort(files, order).map { it.id }
+
+    @Test fun newestFirstBreaksTiesByName() = assertEquals(listOf(1L, 3L, 4L, 2L), ids(SortOrder.Newest))
+    @Test fun oldestFirst() = assertEquals(listOf(4L, 2L, 3L, 1L), ids(SortOrder.Oldest))
+    @Test fun nameAToZIgnoresCaseAndExtension() = assertEquals(listOf(2L, 4L, 1L, 3L), ids(SortOrder.NameAZ))
+    @Test fun nameZToA() = assertEquals(listOf(3L, 1L, 4L, 2L), ids(SortOrder.NameZA))
+    @Test fun largestFirstBreaksTiesByNewestThenName() = assertEquals(listOf(4L, 2L, 1L, 3L), ids(SortOrder.Largest))
+    @Test fun smallestFirst() = assertEquals(listOf(3L, 1L, 4L, 2L), ids(SortOrder.Smallest))
+    @Test fun sortingAnEmptyListGivesAnEmptyList() = assertEquals(emptyList<PdfFile>(), Sorting.sort(emptyList(), SortOrder.NameAZ))
+    @Test fun sortingDoesNotChangeTheInput() {
+        val before = files.map { it.id }
+        Sorting.sort(files, SortOrder.NameZA)
+        assertEquals(before, files.map { it.id })
+    }
+
+    @Test fun everyOrderKeepsEveryFile() {
+        for (order in SortOrder.entries) assertEquals(listOf(1L, 2L, 3L, 4L), ids(order).sorted())
+    }
+
+    @Test fun applyFiltersThenSorts() {
+        val shown = LibraryFilters.apply(files, LibraryFilter.Pdf, "", SortOrder.NameAZ).map { it.id }
+        assertEquals(listOf(2L, 4L, 1L), shown)
+    }
+
+    @Test fun applyDefaultsToNewestFirst() = assertEquals(listOf(1L, 3L, 4L, 2L), LibraryFilters.apply(files, LibraryFilter.All).map { it.id })
+
+    @Test fun everyOrderHasALabel() = assertEquals(6, SortOrder.entries.map { it.label }.distinct().size)
+}

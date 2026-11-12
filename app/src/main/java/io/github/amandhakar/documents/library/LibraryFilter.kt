@@ -21,8 +21,8 @@ enum class LibraryFilter(val label: String) {
 
 /** Filtering and counting the library list. Free of Android calls so it can be unit tested. */
 object LibraryFilters {
-    fun apply(files: List<PdfFile>, filter: LibraryFilter, query: String = ""): List<PdfFile> =
-        files.filter { filter.matches(it.format) && matchesQuery(it, query) }
+    fun apply(files: List<PdfFile>, filter: LibraryFilter, query: String = "", sort: SortOrder = SortOrder.Newest): List<PdfFile> =
+        Sorting.sort(files.filter { filter.matches(it.format) && matchesQuery(it, query) }, sort)
 
     /**
      * True when every word of [query] appears in the file's name or folder, ignoring case. An empty
