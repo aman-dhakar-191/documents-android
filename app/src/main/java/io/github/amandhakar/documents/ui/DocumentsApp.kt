@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.AlertDialog
@@ -51,6 +52,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import io.github.amandhakar.documents.edit.ReaderChrome
+import io.github.amandhakar.documents.edit.ReaderTool
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.amandhakar.documents.DocumentViewModel
 import io.github.amandhakar.documents.EditViewModel
@@ -414,15 +417,18 @@ fun DocumentsApp(
                             if (state is ViewerState.Ready) {
                                 if (edit.placing == null) {
                                     CompactButton("\u2212", enabled = zoom > Zoom.MIN) { zoom = Zoom.zoomOut(zoom) }
-                                    Text("${(zoom * 100).roundToInt()}%")
+                                    Text(ReaderChrome.zoomLabel(zoom))
                                     CompactButton("+", enabled = zoom < Zoom.MAX) { zoom = Zoom.zoomIn(zoom) }
-                                    IconButton(onClick = sign, enabled = !edit.saving) {
-                                        Icon(DocIcons.Edit, contentDescription = "Add signature")
-                                    }
-                                    if (edit.hasPending) {
-                                        IconButton(onClick = { askSaveChoice = true }, enabled = !edit.saving) {
-                                            Icon(DocIcons.Save, contentDescription = "Save signed PDF")
-                                        }
+                                    val pending = ReaderChrome.pendingCount(
+                                        edit.placed.size, edit.textEdits.size, edit.placedTexts.size, edit.marks.size,
+                                    )
+                                    if (pending > 0) {
+                                        Button(
+                                            onClick = { askSaveChoice = true },
+                                            enabled = !edit.saving,
+                                            contentPadding = PaddingValues(horizontal = 16.dp),
+                                            modifier = Modifier.height(40.dp),
+                                        ) { Text(ReaderChrome.saveLabel(pending)) }
                                     }
                                     var menuOpen by remember { mutableStateOf(false) }
                                     IconButton(onClick = { menuOpen = true }) {
@@ -435,35 +441,6 @@ fun DocumentsApp(
                                             onClick = {
                                                 menuOpen = false
                                                 shareOpen()
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text(if (edit.textMode) "Stop changing text" else "Change text") },
-                                            onClick = {
-                                                menuOpen = false
-                                                if (edit.textMode) editViewModel.exitTools() else editViewModel.enterTextMode()
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Add text") },
-                                            onClick = {
-                                                menuOpen = false
-                                                editViewModel.exitTools()
-                                                askNewText = true
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Highlight") },
-                                            onClick = {
-                                                menuOpen = false
-                                                editViewModel.enterHighlightMode()
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Draw") },
-                                            onClick = {
-                                                menuOpen = false
-                                                editViewModel.enterPenMode()
                                             },
                                         )
                                         if (edit.marks.isNotEmpty()) {
@@ -529,6 +506,7 @@ fun DocumentsApp(
                             document = s.document,
                             zoom = zoom,
                             onZoomChange = { zoom = it },
+                            bottomPadding = 104.dp,
                             editing = EditingUi(
                                 signature = image ?: noSignature,
                                 aspect = edit.signature?.let { it.width.toFloat() / it.height } ?: 1f,
@@ -566,15 +544,17 @@ fun DocumentsApp(
                                 modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
                                 shape = RoundedCornerShape(24.dp),
                                 shadowElevation = 6.dp,
-                                tonalElevation = 3.dp,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ) {
                                 Row(
                                     Modifier.padding(start = 16.dp, end = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     when {
-                                        edit.textMode -> Text("Tap a line of text to change it")
-                                        edit.highlightMode -> Text("Tap a line to highlight it")
+                                        edit.textMode || edit.highlightMode -> Text(
+                                            ReaderChrome.hint(ReaderChrome.activeTool(edit.textMode, edit.highlightMode, edit.penMode)).orEmpty(),
+                                        )
                                         else -> {
                                             for (color in Marks.PEN_COLORS) {
                                                 Box(
@@ -593,6 +573,29 @@ fun DocumentsApp(
                                     TextButton(onClick = { editViewModel.exitTools() }) { Text("Done") }
                                 }
                             }
+                        }
+                        if (edit.placing == null && edit.floatingText == null) {
+                            val active = ReaderChrome.activeTool(edit.textMode, edit.highlightMode, edit.penMode)
+                            ReaderDock(
+                                active = active,
+                                enabled = !edit.saving,
+                                onPick = { tool ->
+                                    when (tool) {
+                                        ReaderTool.Sign -> sign()
+                                        ReaderTool.AddText -> {
+                                            editViewModel.exitTools()
+                                            askNewText = true
+                                        }
+                                        ReaderTool.EditText ->
+                                            if (active == tool) editViewModel.exitTools() else editViewModel.enterTextMode()
+                                        ReaderTool.Highlight ->
+                                            if (active == tool) editViewModel.exitTools() else editViewModel.enterHighlightMode()
+                                        ReaderTool.Draw ->
+                                            if (active == tool) editViewModel.exitTools() else editViewModel.enterPenMode()
+                                    }
+                                },
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                            )
                         }
                         if (edit.saving) CircularProgressIndicator(Modifier.align(Alignment.Center))
                     }
