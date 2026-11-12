@@ -56,8 +56,10 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     page) and writes the new text over it in Helvetica, shrunk down to 60% to fit. **The old text is covered, not
     erased: it is still in the file** (searchable, copyable), so this must not be used to hide sensitive
     information. Limits: Latin letters, digits and common symbols only (no Hindi or emoji yet); text colour is
-    copied from the old text (the pixel furthest from the background; black if none stands out) but the font is not
-    matched; rotated pages and scans (no text) are not supported. Stage 2: **Add text** puts a new
+    copied from the old text (the pixel furthest from the background; black if none stands out); the font is matched to the
+    closest of the standard Helvetica / Times / Courier families with bold and italic (from the old font's name and
+    descriptor), and can be changed in the dialog (the exact typeface can't be reused: PDF fonts are usually trimmed to
+    the letters the document used); rotated pages and scans (no text) are not supported. Stage 2: **Add text** puts a new
     piece of text anywhere: it is typed, then dragged and resized (the width chosen sets the font size) like the
     signature, and written as real Helvetica text on Save (same character limits as above, black, one line, at
     most 200 characters; rotated pages not supported). Stage 3: **Highlight** (tap a line, tap
@@ -68,7 +70,7 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     change from the page's own `Tj` / `TJ` text operators and moves the pen on by their widths so the text after
     them stays put; it then still covers and retypes as before. It refuses and leaves the page as it is (only
     covered) for rotated pages, vertical text, text inside forms, or any content it can't match exactly, and
-    says which pages. Text drawn as outlines or as an image can't be removed. Not started: matching the font.
+    says which pages. Text drawn as outlines or as an image can't be removed.
 
 ## Phases
 | Phase | Scope | Status |
@@ -76,7 +78,9 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
 | 1 | View PDFs: library of all PDFs as cards with previews, picker (Browse), open-with, scroll, button and pinch zoom, error states, CI, signed releases | In progress (v0.1.0 released; library and pinch zoom not yet device-tested) |
 | 2 | Better viewing: text selection on Android 15+ (built in, no library), then remember last page, password-protected PDFs, text search (search is in the same Android 15 API; older phones would need a third-party library: check licence, e.g. MuPDF is AGPL) | Text selection implemented, not device-tested; rest not started |
 | 3 | PDF annotation / editing: signature first (draw, place, save as new or replace), via PdfBox-Android | Signature implemented and working on the owner's phone; text change (cover and retype) implemented, not device-tested; removing old text, new text boxes and other annotations not started |
-| 4 | Word (.docx) viewing, then editing (large; Apache POI is heavy on Android, faithful layout is hard) | Not started, needs an explicit go-ahead |
+| 4 | Web pages (.html / .htm): safe offline viewer, save as PDF | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
+| 5 | PowerPoint (.pptx) viewing, then editing | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
+| 6 | Word (.docx) viewing, then editing | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
 
 "Docs" is assumed to mean Word-style `.doc` / `.docx`. Google Docs would be a separate
 integration (Google sign-in and APIs) and is not planned.

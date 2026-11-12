@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.amandhakar.documents.edit.PageLines
 import io.github.amandhakar.documents.edit.EraseOutcome
+import io.github.amandhakar.documents.edit.FontStyleChoice
 import io.github.amandhakar.documents.edit.MarkPoint
 import io.github.amandhakar.documents.edit.Marks
 import io.github.amandhakar.documents.edit.PageMark
@@ -86,6 +87,7 @@ data class LineEdit(
     val line: TextLine,
     val cover: Int,
     val ink: Int,
+    val font: FontStyleChoice,
     val initialText: String,
 )
 
@@ -307,7 +309,8 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         val existing = s.textEdits.firstOrNull { it.sameLineAs(TextEdit.forLine(page, pageLines, line, "", cover)) }
         s.copy(
             editingLine = LineEdit(
-                page, pageLines, line, existing?.cover ?: cover, existing?.ink ?: ink, existing?.text ?: line.text,
+                page, pageLines, line, existing?.cover ?: cover, existing?.ink ?: ink, existing?.font ?: line.font,
+                existing?.text ?: line.text,
             ),
         )
     }
@@ -315,11 +318,11 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelLineEdit() = _state.update { it.copy(editingLine = null) }
 
     /** Keeps [text] as the replacement for the line being changed. Changing a line back to what it was removes the change. */
-    fun applyLineEdit(text: String) = _state.update { s ->
+    fun applyLineEdit(text: String, font: FontStyleChoice? = null) = _state.update { s ->
         val target = s.editingLine ?: return@update s
         val cleaned = PdfText.clean(text)
         if (PdfText.unsupported(cleaned).isNotEmpty()) return@update s
-        val edit = TextEdit.forLine(target.page, target.pageLines, target.line, cleaned, target.cover, target.ink)
+        val edit = TextEdit.forLine(target.page, target.pageLines, target.line, cleaned, target.cover, target.ink, font ?: target.font)
         val others = s.textEdits.filterNot { it.sameLineAs(edit) }
         val unchanged = cleaned == target.line.text
         s.copy(editingLine = null, textEdits = if (unchanged) others else others + edit)
