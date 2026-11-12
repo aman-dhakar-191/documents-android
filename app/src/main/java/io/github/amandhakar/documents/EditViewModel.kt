@@ -12,6 +12,7 @@ import io.github.amandhakar.documents.edit.FontStyleChoice
 import io.github.amandhakar.documents.edit.MarkPoint
 import io.github.amandhakar.documents.edit.Marks
 import io.github.amandhakar.documents.edit.PageMark
+import io.github.amandhakar.documents.edit.NearbyStyle
 import io.github.amandhakar.documents.edit.PdfSigner
 import io.github.amandhakar.documents.edit.PenStroke
 import io.github.amandhakar.documents.edit.PlacedText
@@ -78,7 +79,16 @@ data class EditState(
 }
 
 /** New text being positioned: the text and the picture shown while it is moved. */
-class FloatingText(val text: String, val stamp: TextStamp)
+class FloatingText(
+    val text: String,
+    val stamp: TextStamp,
+    /** The font to use when nothing nearby is matched. */
+    val font: FontStyleChoice,
+    /** True to copy the font, size and colour from the text nearest to where it is dropped. */
+    val matchNearby: Boolean,
+    /** How wide it started (a fraction of the visible area): if it is still this wide when dropped, it was not resized. */
+    val startWidth: Float,
+)
 
 /** A line of text the person tapped: what to show in the box, and the colour that will cover the old text. */
 data class LineEdit(
@@ -171,18 +181,18 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The signature being positioned moved or resized (as fractions of the visible area). */
     /** Starts positioning a new piece of [text]; false (and a message) when it can't be used. */
-    fun startPlacingText(text: String) {
+    fun startPlacingText(text: String, zoom: Float, matchNearby: Boolean, font: FontStyleChoice) {
         val prepared = TextBoxMath.prepare(text)
         val bad = PdfText.unsupported(prepared)
-        val stamp = if (prepared.isEmpty() || bad.isNotEmpty()) null else TextStamp.render(prepared)
+        val stamp = if (prepared.isEmpty() || bad.isNotEmpty()) null else TextStamp.render(prepared, font)
         _state.update { s ->
             if (stamp == null) {
                 s.copy(message = if (bad.isNotEmpty()) "Can't use ${bad.joinToString(" ")} yet." else "Type some text first.")
             } else {
                 s.copy(
                     textMode = false, highlightMode = false, penMode = false,
-                    floatingText = FloatingText(prepared, stamp),
-                    placing = Placement.initial(0, stamp.aspect, VIEWPORT_ASPECT),
+                    floatingText = FloatingText(prepared, stamp, font, matchNearby, TextBoxMath.startWidth(stamp.aspect, zoom)),
+                    placing = Placement.initial(0, stamp.aspect, VIEWPORT_ASPECT, TextBoxMath.startWidth(stamp.aspect, zoom)),
                 )
             }
         }
@@ -194,13 +204,27 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelPlacing() = _state.update { it.copy(placing = null, floatingText = null) }
 
     /** The signature was dropped at [placed] on a page. */
-    fun placeAt(placed: PlacedSignature) = _state.update { s ->
+    fun placeAt(placed: PlacedSignature, nearby: NearbyStyle? = null) = _state.update { s ->
         val text = s.floatingText
         if (text != null) {
+            val match = if (text.matchNearby) nearby else null
+            // The size is copied only if the person left it as it started; if they resized it, their size wins.
+            val resized = s.placing != null && kotlin.math.abs(s.placing.width - text.startWidth) > 0.002f
+            val size = match?.line?.fontSize?.takeIf { !resized }
+            val font = match?.line?.font ?: text.font
+            // Re-draw the picture in the matched font so its width (and the preview) are right.
+            val stamp = if (font == text.font) text.stamp else TextStamp.render(text.text, font) ?: text.stamp
+            val place = if (size != null && match != null) {
+                placed.copy(width = TextBoxMath.widthFraction(size, stamp.widthPerPt, match.pageWidthPt))
+            } else {
+                placed
+            }
             s.copy(
                 placing = null,
                 floatingText = null,
-                placedTexts = s.placedTexts + PlacedText(placed, text.text, text.stamp.aspect, text.stamp.baselineRatio),
+                placedTexts = s.placedTexts + PlacedText(
+                    place, text.text, stamp.aspect, stamp.baselineRatio, font, match?.ink ?: 0xFF000000.toInt(), size,
+                ),
             )
         } else {
             s.copy(placing = null, placed = s.placed + placed)

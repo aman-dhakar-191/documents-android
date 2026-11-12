@@ -18,7 +18,13 @@ object ShareFiles {
      * Shares one or more PDF files. Files that can't be shared are skipped. Returns false when
      * nothing could be shared or there is no app to share with.
      */
-    fun sharePdfs(context: Context, uris: List<Uri>): Boolean {
+    fun sharePdfs(context: Context, uris: List<Uri>): Boolean = shareFiles(context, uris, "application/pdf")
+
+    /** The type to share a mix of files under: their common type, or the match-anything type when they differ or there are none. */
+    fun commonMimeType(types: List<String>): String = types.distinct().singleOrNull() ?: "*/*"
+
+    /** Shares one or more files of the given [mimeType]. Same rules as [sharePdfs]. */
+    fun shareFiles(context: Context, uris: List<Uri>, mimeType: String): Boolean {
         val shareable = uris.filter { canShare(it.scheme) }
         if (shareable.isEmpty()) return false
         val send = if (shareable.size == 1) {
@@ -26,14 +32,14 @@ object ShareFiles {
         } else {
             Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(shareable))
         }
-        send.type = "application/pdf"
+        send.type = mimeType
         // The receiving app may read just these files, for now. The clip lists them all so the
         // permission covers every one.
         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        val clip = ClipData.newRawUri("PDF", shareable[0])
+        val clip = ClipData.newRawUri("Files", shareable[0])
         for (uri in shareable.drop(1)) clip.addItem(ClipData.Item(uri))
         send.clipData = clip
-        return start(context, Intent.createChooser(send, if (shareable.size == 1) "Share PDF" else "Share PDFs"))
+        return start(context, Intent.createChooser(send, if (shareable.size == 1) "Share file" else "Share files"))
     }
 
     /** Shares a piece of text, for example text selected in a PDF. */

@@ -84,6 +84,8 @@ import io.github.amandhakar.documents.edit.MarkPoint
 import io.github.amandhakar.documents.edit.Marks
 import io.github.amandhakar.documents.edit.PageMark
 import io.github.amandhakar.documents.edit.PenStroke
+import io.github.amandhakar.documents.edit.LineNearest
+import io.github.amandhakar.documents.edit.NearbyStyle
 import io.github.amandhakar.documents.edit.PageHit
 import io.github.amandhakar.documents.edit.PageRow
 import io.github.amandhakar.documents.edit.PlacedSignature
@@ -126,6 +128,8 @@ fun PageList(
     var pinch by remember { mutableStateOf(1f) }
     // Selected text on one page. Reset when another document is opened.
     var selected by remember(document) { mutableStateOf<SelectedText?>(null) }
+    // The pictures of the pages on screen, by page.
+    val pictures = remember(document) { mutableMapOf<Int, Bitmap>() }
 
     BoxWithConstraints(
         modifier
@@ -181,6 +185,7 @@ fun PageList(
                         selection = selected?.takeIf { it.page == index }?.text,
                         onSelectionChange = { selected = it },
                         editing = editing,
+                        pictures = pictures,
                     )
                 }
             }
@@ -206,7 +211,11 @@ fun PageList(
                     pageWidth = widthPx.toFloat(),
                     signatureAspect = editing.floatingAspect,
                 )
-                if (hit != null) editing.onPlace(hit) else editing.onMiss()
+                if (hit == null) {
+                    editing.onMiss()
+                } else {
+                    editing.onPlace(hit, if (editing.wantsNearby) nearbyStyle(editing, hit, pictures) else null)
+                }
             }
         }
     }
@@ -227,6 +236,7 @@ private fun PageImage(
     selection: PageText?,
     onSelectionChange: (SelectedText?) -> Unit,
     editing: EditingUi?,
+    pictures: MutableMap<Int, Bitmap>,
 ) {
     val bitmap by produceState<Bitmap?>(initialValue = null, document, index, widthPx) {
         value = try {
@@ -373,8 +383,13 @@ private fun PageImage(
             modifier = Modifier.fillMaxWidth(),
             contentScale = ContentScale.FillWidth,
         )
-        if (editing != null && editing.linesTappable) {
+        if (editing != null && editing.needsLines) {
             LaunchedEffect(index) { editing.onNeedLines(index) }
+        }
+        // Remember this page's picture, so the colour of nearby text can be read when new text is dropped.
+        DisposableEffect(index, loaded) {
+            pictures[index] = loaded
+            onDispose { if (pictures[index] === loaded) pictures.remove(index) }
         }
         if (editing != null && pageSize.width > 0 && pageSize.height > 0) {
             for (change in editing.textEdits) {
@@ -625,8 +640,8 @@ class EditingUi(
     val placed: List<PlacedSignature>,
     val placing: PlacedSignature?,
     val onPlacingChange: (PlacedSignature) -> Unit,
-    /** The tick: the signature was dropped on this page spot. */
-    val onPlace: (PlacedSignature) -> Unit,
+    /** The tick: the signature (or text) was dropped on this page spot; for new text, the style of the text nearest to it. */
+    val onPlace: (PlacedSignature, NearbyStyle?) -> Unit,
     /** The tick was pressed while the signature was not over any page. */
     val onMiss: () -> Unit,
     val onCancel: () -> Unit,
@@ -643,6 +658,8 @@ class EditingUi(
     val onLineTapped: (Int, TextLine, Int, Int) -> Unit = { _, _, _, _ -> },
     /** True while tapping lines to highlight them. */
     val highlightMode: Boolean = false,
+    /** True while new text is being positioned and should copy the style of the text nearest to it. */
+    val wantsNearby: Boolean = false,
     /** True while drawing with a finger; [penPaused] lets the pages scroll instead. */
     val penMode: Boolean = false,
     val penPaused: Boolean = false,
@@ -658,6 +675,9 @@ class EditingUi(
 
     /** True while lines are outlined and tappable. */
     val linesTappable: Boolean get() = textMode || highlightMode
+
+    /** True when the lines of the pages showing are needed (to tap them, or to match new text to them). */
+    val needsLines: Boolean get() = linesTappable || wantsNearby
 }
 
 private val SignatureFrame = Color(0xFF3390FF)
@@ -843,12 +863,13 @@ private fun coverColorAround(page: Bitmap, found: PageLines, line: TextLine): In
 @Composable
 private fun BoxScope.NewTextOnPage(text: PlacedText, pageSize: IntSize, pageAspect: Float) {
     val density = LocalDensity.current
-    val stamp = remember(text.text) { TextStamp.render(text.text) } ?: return
+    val stamp = remember(text.text, text.font) { TextStamp.render(text.text, text.font) } ?: return
     val image = remember(stamp) { stamp.bitmap.asImageBitmap() }
     val height = Placement.height(text.place.width, text.aspect, pageAspect)
     Image(
         bitmap = image,
         contentDescription = "New text: ${text.text}",
+        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(text.ink), androidx.compose.ui.graphics.BlendMode.SrcIn),
         modifier = Modifier
             .offset { IntOffset((text.place.left * pageSize.width).roundToInt(), (text.place.top * pageSize.height).roundToInt()) }
             .size(
@@ -934,3 +955,19 @@ private fun previewStyle(change: TextEdit, size: androidx.compose.ui.unit.TextUn
         fontWeight = if (change.font.bold) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
         fontStyle = if (change.font.italic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
     )
+
+/** The style of the text nearest to where new text was dropped (within about 60 points), read from the page's lines and picture. */
+private fun nearbyStyle(editing: EditingUi, hit: PlacedSignature, pictures: Map<Int, Bitmap>): NearbyStyle? {
+    val found = editing.lines[hit.page] ?: return null
+    val picture = pictures[hit.page] ?: return null
+    if (!found.supported || found.widthPt <= 0f || found.heightPt <= 0f) return null
+    val pageAspect = found.widthPt / found.heightPt
+    val height = Placement.height(hit.width, editing.floatingAspect, pageAspect)
+    val line = LineNearest.find(
+        found.lines,
+        x = (hit.left + hit.width / 2f) * found.widthPt,
+        y = (hit.top + height / 2f) * found.heightPt,
+        maxDistance = 60f,
+    ) ?: return null
+    return NearbyStyle(line, found.widthPt, inkColorOf(picture, found, line, coverColorAround(picture, found, line)))
+}

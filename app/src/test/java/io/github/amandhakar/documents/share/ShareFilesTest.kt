@@ -19,4 +19,12 @@ class ShareFilesTest {
         assertFalse(ShareFiles.canShare("https"))
         assertFalse(ShareFiles.canShare("content2"))
     }
+
+    @Test fun filesOfOneTypeAreSharedUnderThatType() =
+        org.junit.Assert.assertEquals("application/pdf", ShareFiles.commonMimeType(listOf("application/pdf", "application/pdf")))
+
+    @Test fun mixedFilesAreSharedUnderAnyType() =
+        org.junit.Assert.assertEquals("*/*", ShareFiles.commonMimeType(listOf("application/pdf", "text/html")))
+
+    @Test fun nothingToShareGivesAnyType() = org.junit.Assert.assertEquals("*/*", ShareFiles.commonMimeType(emptyList()))
 }

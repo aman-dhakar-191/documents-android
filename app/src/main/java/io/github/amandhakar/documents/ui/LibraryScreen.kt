@@ -16,6 +16,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +31,8 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +58,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
+import io.github.amandhakar.documents.document.DocumentFormat
+import io.github.amandhakar.documents.library.LibraryFilter
+import io.github.amandhakar.documents.library.LibraryFilters
 import io.github.amandhakar.documents.defaultapp.DefaultKind
 import io.github.amandhakar.documents.defaultapp.DefaultPdfApp
 import io.github.amandhakar.documents.defaultapp.DefaultPdfApps
@@ -61,7 +69,7 @@ import io.github.amandhakar.documents.library.PdfFiles
 import io.github.amandhakar.documents.library.StorageAccess
 import io.github.amandhakar.documents.library.Thumbnails
 
-/** Every PDF on the phone as a card with a first-page preview. Tap a card to read it. */
+/** Every PDF and web page on the phone as a card (PDFs with a first-page preview), with chips to filter by kind. Tap a card to open it. */
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
@@ -70,6 +78,7 @@ fun LibraryScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val selected by viewModel.selected.collectAsState()
+    val filter by viewModel.filter.collectAsState()
     val context = LocalContext.current
 
     // Android 10 and older ask with a normal permission dialog.
@@ -92,9 +101,9 @@ fun LibraryScreen(
             CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
         LibraryState.NeedsPermission -> Message(
-            "To show your PDFs here, Documents needs permission to see the files on your phone. " +
-                "It only looks for PDF files, and nothing leaves your phone. " +
-                "You can still open a single PDF with Browse without giving this permission.",
+            "To show your files here, Documents needs permission to see the files on your phone. " +
+                "It only looks for PDF files and web pages, and nothing leaves your phone. " +
+                "You can still open a single file with Browse without giving this permission.",
         ) {
             Button(onClick = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -108,7 +117,7 @@ fun LibraryScreen(
             Button(onClick = { viewModel.refresh() }) { Text("Try again") }
         }
         is LibraryState.Ready -> if (s.files.isEmpty()) {
-            Message("No PDF files found on this phone. If you just downloaded one, it may take a moment to appear.") {
+            Message("No PDF files or web pages found on this phone. If you just downloaded one, it may take a moment to appear.") {
                 Button(onClick = { viewModel.refresh() }) { Text("Refresh") }
             }
         } else {
@@ -120,12 +129,27 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (defaultApp.kind != DefaultKind.Ours) {
+                item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
+                    FilterRow(filter, LibraryFilters.counts(s.files)) { viewModel.setFilter(it) }
+                }
+                val samplePdf = s.files.firstOrNull { it.format == DocumentFormat.Pdf }
+                if (defaultApp.kind != DefaultKind.Ours && filter != LibraryFilter.Web && samplePdf != null) {
                     item(key = "default-app", span = { GridItemSpan(maxLineSpan) }) {
-                        DefaultAppCard(defaultApp, s.files.first().uri)
+                        DefaultAppCard(defaultApp, samplePdf.uri)
                     }
                 }
-                items(s.files, key = { it.id }) { file ->
+                val shown = LibraryFilters.apply(s.files, filter)
+                if (shown.isEmpty()) {
+                    item(key = "none", span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            "No ${filter.label.lowercase()} found.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
+                items(shown, key = { it.id }) { file ->
                     PdfCard(
                         file = file,
                         selected = file.id in selected,
@@ -136,6 +160,23 @@ fun LibraryScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+/** The chips that pick which kind of file to list: All, PDF, Web pages (each with how many there are). */
+@Composable
+private fun FilterRow(selected: LibraryFilter, counts: Map<LibraryFilter, Int>, onPick: (LibraryFilter) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        for (filter in LibraryFilter.entries) {
+            FilterChip(
+                selected = filter == selected,
+                onClick = { onPick(filter) },
+                label = { Text("${filter.label} ${counts[filter] ?: 0}") },
+            )
         }
     }
 }
@@ -229,6 +270,16 @@ private fun SelectBadge(selected: Boolean, modifier: Modifier = Modifier) {
 
 @Composable
 private fun Thumbnail(file: PdfFile, modifier: Modifier) {
+    if (file.format == DocumentFormat.Html) {
+        // A web page has no first page to show: a globe and its type instead.
+        Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(DocIcons.Public, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("Web page", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
     val context = LocalContext.current.applicationContext
     val bitmap by produceState<Bitmap?>(initialValue = null, file.id, file.modifiedSeconds) {
         value = Thumbnails.load(context, file)

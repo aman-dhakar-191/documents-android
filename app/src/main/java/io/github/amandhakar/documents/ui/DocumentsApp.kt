@@ -169,7 +169,7 @@ fun DocumentsApp(
 
     val shareChosen: () -> Unit = {
         val files = MultiSelect.chosen((libraryState as? LibraryState.Ready)?.files.orEmpty(), selectedIds)
-        if (ShareFiles.sharePdfs(context, files.map { it.uri })) {
+        if (ShareFiles.shareFiles(context, files.map { it.uri }, ShareFiles.commonMimeType(files.map { it.format.mimeType }))) {
             libraryViewModel.clearSelection()
         } else {
             Toast.makeText(context, "These files can't be shared.", Toast.LENGTH_SHORT).show()
@@ -280,11 +280,14 @@ fun DocumentsApp(
         }
         if (askNewText) {
             var typed by remember { mutableStateOf("") }
+            var matchNearby by remember { mutableStateOf(true) }
+            var newFont by remember { mutableStateOf(io.github.amandhakar.documents.edit.FontStyleChoice()) }
             val unusable = PdfText.unsupported(TextBoxMath.prepare(typed))
             AlertDialog(
                 onDismissRequest = { askNewText = false },
                 title = { Text("Add text") },
                 text = {
+                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = typed,
                         onValueChange = { typed = it },
@@ -300,13 +303,34 @@ fun DocumentsApp(
                             )
                         },
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = matchNearby, onCheckedChange = { matchNearby = it })
+                        Text(
+                            "Match the text nearby (font, size and colour) where you drop it",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (!matchNearby) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for ((family, label) in listOf(
+                                FontFamilyChoice.Sans to "Sans",
+                                FontFamilyChoice.Serif to "Serif",
+                                FontFamilyChoice.Mono to "Mono",
+                            )) {
+                                ChoiceButton(label, newFont.family == family) { newFont = newFont.copy(family = family) }
+                            }
+                            ChoiceButton("B", newFont.bold) { newFont = newFont.copy(bold = !newFont.bold) }
+                            ChoiceButton("I", newFont.italic) { newFont = newFont.copy(italic = !newFont.italic) }
+                        }
+                    }
+                  }
                 },
                 confirmButton = {
                     Button(
                         enabled = unusable.isEmpty() && TextBoxMath.prepare(typed).isNotEmpty(),
                         onClick = {
                             askNewText = false
-                            editViewModel.startPlacingText(typed)
+                            editViewModel.startPlacingText(typed, zoom, matchNearby, newFont)
                         },
                     ) { Text("Add") }
                 },
@@ -502,11 +526,12 @@ fun DocumentsApp(
                                 floatingAspect = edit.floatingText?.stamp?.aspect
                                     ?: edit.signature?.let { it.width.toFloat() / it.height } ?: 1f,
                                 floatingIsText = edit.floatingText != null,
+                                wantsNearby = edit.floatingText?.matchNearby == true,
                                 placedTexts = edit.placedTexts,
                                 placed = edit.placed,
                                 placing = if (image != null || floatingImage != null) edit.placing else null,
                                 onPlacingChange = { editViewModel.updatePlacing(it) },
-                                onPlace = { editViewModel.placeAt(it) },
+                                onPlace = { place, nearby -> editViewModel.placeAt(place, nearby) },
                                 onMiss = {
                                     Toast.makeText(context, "Move the signature over a page first.", Toast.LENGTH_SHORT).show()
                                 },

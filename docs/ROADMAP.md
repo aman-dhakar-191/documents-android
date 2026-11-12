@@ -23,7 +23,7 @@ Reason: effort and risk go up in that order, and the first one reuses what Andro
 
 ## Phase 4: Web pages (.html, .htm)
 
-**Status: stage 1 implemented (owner confirmed the order and "remote parts blocked"); stages 2 to 4 not started.**
+**Status: stages 1 and 2 implemented (owner confirmed the order and "remote parts blocked"; library chips and cards added at the owner's request); stages 3 and 4 not started.**
 
 **Goal:** open an HTML file from the file manager, a chat app or the library and read it, then optionally save it as a
 PDF (which the PDF tools can then sign and mark up).

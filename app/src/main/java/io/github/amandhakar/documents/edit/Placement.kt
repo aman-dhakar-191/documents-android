@@ -10,7 +10,7 @@ data class PlacedSignature(val page: Int, val left: Float, val top: Float, val w
 /** Where a signature sits on a page, and keeping it on the page. Plain numbers, so it can be unit tested. */
 object Placement {
     const val START_WIDTH = 0.35f
-    const val MIN_WIDTH = 0.08f
+    const val MIN_WIDTH = 0.03f
     const val MAX_WIDTH = 0.9f
 
     /**
@@ -22,9 +22,9 @@ object Placement {
         return width * pageAspect / signatureAspect
     }
 
-    /** A new signature on [page], centred. */
-    fun initial(page: Int, signatureAspect: Float, pageAspect: Float): PlacedSignature =
-        fit(PlacedSignature(page, 0f, 0f, START_WIDTH), signatureAspect, pageAspect).let {
+    /** A new signature (or text) on [page], centred, [width] wide (a fraction of the visible area). */
+    fun initial(page: Int, signatureAspect: Float, pageAspect: Float, width: Float = START_WIDTH): PlacedSignature =
+        fit(PlacedSignature(page, 0f, 0f, width), signatureAspect, pageAspect).let {
             val h = height(it.width, signatureAspect, pageAspect)
             fit(it.copy(left = (1f - it.width) / 2f, top = (1f - h) / 2f), signatureAspect, pageAspect)
         }

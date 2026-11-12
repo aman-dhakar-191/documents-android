@@ -3,13 +3,14 @@ package io.github.amandhakar.documents.library
 import android.content.ContentUris
 import android.net.Uri
 import android.provider.MediaStore
+import io.github.amandhakar.documents.document.DocumentFormat
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/** A PDF found on the phone, as listed by Android's media index. */
+/** A PDF or web page found on the phone, as listed by Android's media index (the name says PDF for historical reasons). */
 data class PdfFile(
     val id: Long,
     val name: String,
@@ -17,15 +18,19 @@ data class PdfFile(
     val folder: String,
     val sizeBytes: Long,
     val modifiedSeconds: Long,
+    val format: DocumentFormat = DocumentFormat.Pdf,
 ) {
     val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), id)
 }
 
 /** Text and ordering for the PDF cards. Kept free of Android calls so it can be unit tested. */
 object PdfFiles {
-    /** "Report.PDF" -> "Report". Names without a .pdf ending are left alone. */
+    private val EXTENSIONS = listOf(".pdf", ".xhtml", ".html", ".htm")
+
+    /** "Report.PDF" -> "Report", "page.html" -> "page". Names without a known ending are left alone. */
     fun title(name: String): String {
-        val trimmed = if (name.endsWith(".pdf", ignoreCase = true)) name.dropLast(4) else name
+        val ending = EXTENSIONS.firstOrNull { name.endsWith(it, ignoreCase = true) }
+        val trimmed = if (ending != null) name.dropLast(ending.length) else name
         return trimmed.ifBlank { name }
     }
 

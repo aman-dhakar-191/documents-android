@@ -144,12 +144,12 @@ object PdfSigner {
         val crop = page.cropBox
         val w = crop.width
         val h = crop.height
-        val font = PDType1Font.HELVETICA
-        val size = TextBoxMath.fontSizePt(newText.place.width, w, font.getStringWidth(newText.text) / 1000f)
+        val font = standardFont(newText.font)
+        val size = newText.fontSizePt ?: TextBoxMath.fontSizePt(newText.place.width, w, font.getStringWidth(newText.text) / 1000f)
         val heightFraction = Placement.height(newText.place.width, newText.aspect, w / h)
         val baseline = TextBoxMath.baselineFromTop(newText.place.top, heightFraction, newText.baselineRatio)
         PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { content ->
-            content.setNonStrokingColor(0, 0, 0)
+            content.setNonStrokingColor((newText.ink shr 16) and 0xFF, (newText.ink shr 8) and 0xFF, newText.ink and 0xFF)
             content.beginText()
             content.setFont(font, size)
             content.newLineAtOffset(crop.lowerLeftX + newText.place.left * w, crop.lowerLeftY + (1f - baseline) * h)

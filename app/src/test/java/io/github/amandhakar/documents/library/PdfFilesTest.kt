@@ -15,6 +15,14 @@ class PdfFilesTest {
         assertEquals("a.b", PdfFiles.title("a.b.pdf"))
     }
 
+    @Test fun titleDropsWebPageExtensions() {
+        assertEquals("page", PdfFiles.title("page.html"))
+        assertEquals("page", PdfFiles.title("page.HTM"))
+        assertEquals("page", PdfFiles.title("page.xhtml"))
+        assertEquals("a.b", PdfFiles.title("a.b.html"))
+        assertEquals(".html", PdfFiles.title(".html"))
+    }
+
     @Test fun titleKeepsOtherNamesAndNeverGoesBlank() {
         assertEquals("notes", PdfFiles.title("notes"))
         assertEquals("pdf", PdfFiles.title("pdf"))
