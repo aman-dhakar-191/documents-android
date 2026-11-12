@@ -113,6 +113,15 @@ Old `.doc` (binary) would need a heavy library (Apache POI) and is **not** plann
 
 ---
 
+## Converting between formats (added at the owner's request)
+
+- Word and PowerPoint to PDF: done (Android's own PDF writer; no library).
+- PDF to Word and PDF to PowerPoint: done, with a choice each time between **editable text** (a best guess at the layout) and
+  **page pictures** (looks exactly like the PDF, not editable). Written by the app's own `.docx` / `.pptx` writers.
+- Not done: Word to PowerPoint and back, real tables or pictures from a PDF, OCR for scanned PDFs (would need a library).
+
+---
+
 ## Questions for the owner before any of this starts
 
 1. Is the order above right (web pages, PowerPoint, Word), or is one of them urgent?

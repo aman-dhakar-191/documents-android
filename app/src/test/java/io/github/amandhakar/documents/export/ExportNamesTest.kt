@@ -32,6 +32,13 @@ class ExportNamesTest {
         assertEquals("ab.pdf", ExportNames.pdfName("a\u0000b.docx"))
     }
 
+    @Test fun officeNamesKeepTheBaseName() {
+        assertEquals("Report.docx", ExportNames.nameWithExtension("Report.pdf", ".docx"))
+        assertEquals("Deck.pptx", ExportNames.nameWithExtension("Deck.PDF", ".pptx"))
+        assertEquals("document.docx", ExportNames.nameWithExtension(null, ".docx"))
+        assertEquals("a.b.docx", ExportNames.nameWithExtension("a.b.pdf", ".docx"))
+    }
+
     @Test fun errorsHaveHelpfulMessages() {
         assertTrue(ExportNames.errorMessage(OutOfMemoryError()).contains("too big"))
         assertTrue(ExportNames.errorMessage(SecurityException()).contains("Pick another place"))

@@ -20,6 +20,9 @@ object ExportNames {
         return (if (base.isEmpty()) "document" else base) + ".pdf"
     }
 
+    /** "Report.pdf" gives "Report.docx" (pass ".docx" or ".pptx"); a missing, blank or odd name still gives a usable file name. */
+    fun nameWithExtension(original: String?, extension: String): String = pdfName(original).removeSuffix(".pdf") + extension
+
     /** What to tell the person when saving as a PDF failed. */
     fun errorMessage(error: Throwable): String = when (error) {
         is OutOfMemoryError -> "This document is too big to turn into a PDF on this phone."
