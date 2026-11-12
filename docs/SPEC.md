@@ -61,8 +61,11 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     descriptor), and can be changed in the dialog (the exact typeface can't be reused: PDF fonts are usually trimmed to
     the letters the document used); rotated pages and scans (no text) are not supported. Stage 2: **Add text** puts a new
     piece of text anywhere: it is typed, then dragged and resized (the width chosen sets the font size) like the
-    signature, and written as real Helvetica text on Save (same character limits as above, black, one line, at
-    most 200 characters; rotated pages not supported). Stage 3: **Highlight** (tap a line, tap
+    signature, and written as real text on Save (same character limits as above, one line, at most 200 characters; rotated
+    pages not supported). It starts about the size of normal 12 point text at the current zoom, not page-wide. By default
+    it **matches the text nearby**: where it is dropped, the nearest line of text on that page (within about 60 points)
+    gives it its font family, bold / italic, colour and, if it was not resized, its size. Unticking that in the Add text
+    dialog gives a manual Sans / Serif / Mono, B and I choice instead (black, sized by width). Stage 3: **Highlight** (tap a line, tap
     again to remove: a translucent yellow box drawn over the text so the words stay readable) and **Draw** (a
     finger pen in three colours; a toggle switches between drawing and scrolling the pages; works on rotated
     pages too). Both are saved into the page content with the other changes. Stage 4 (experimental, off by

@@ -125,4 +125,18 @@ class TextLinesTest {
         assertEquals(blue, TextEdit.forLine(0, page, lines[0], "x", 0xFFFFFFFF.toInt(), blue).ink)
         assertEquals(0xFF000000.toInt(), TextEdit.forLine(0, page, lines[0], "x", 0xFFFFFFFF.toInt()).ink)
     }
+
+    @Test fun theNearestLineWithinReachIsFound() {
+        // Two lines: "first" at y 10..22 and "second" at y 30..42, both x 10..110.
+        assertEquals("first", LineNearest.find(lines, 50f, 25f, maxDistance = 20f)?.text) // 3 pt below "first", 5 above "second"
+        assertEquals("second", LineNearest.find(lines, 50f, 28f, maxDistance = 20f)?.text)
+    }
+
+    @Test fun aPointOnALineIsAtDistanceZero() = assertEquals("second", LineNearest.find(lines, 50f, 35f, maxDistance = 0f)?.text)
+
+    @Test fun noLineWithinReachGivesNull() = assertNull(LineNearest.find(lines, 50f, 300f, maxDistance = 60f))
+
+    @Test fun distanceCountsSidewaysToo() = assertNull(LineNearest.find(lines, 400f, 15f, maxDistance = 60f))
+
+    @Test fun noLinesGivesNull() = assertNull(LineNearest.find(emptyList(), 0f, 0f, maxDistance = 60f))
 }

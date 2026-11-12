@@ -138,6 +138,18 @@ object LineHit {
             }
 }
 
+object LineNearest {
+    /** The line closest to ([x], [y]) points from the page's top-left, within [maxDistance] points (0 when the point is on it); null if none. */
+    fun find(lines: List<TextLine>, x: Float, y: Float, maxDistance: Float): TextLine? =
+        lines.map { it to distance(it, x, y) }.filter { it.second <= maxDistance }.minByOrNull { it.second }?.first
+
+    private fun distance(line: TextLine, x: Float, y: Float): Float {
+        val dx = maxOf(line.left - x, 0f, x - line.right)
+        val dy = maxOf(line.top - y, 0f, y - line.bottom)
+        return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
+}
+
 object TextFit {
     const val SMALLEST = 0.6f
 

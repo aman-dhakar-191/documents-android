@@ -28,4 +28,27 @@ class TextBoxTest {
     @Test fun preparingCutsVeryLongText() = assertEquals(TextBoxMath.MAX_LENGTH, TextBoxMath.prepare("x".repeat(500)).length)
 
     @Test fun blankStaysBlank() = assertEquals("", TextBoxMath.prepare(" \n\t "))
+
+    @Test fun shortTextStartsAboutTwelvePointsLongAtFullPageWidth() {
+        // 2 : 1 picture at zoom 1: 2 * 14 / 595 of the width.
+        assertEquals(2f * 14f / 595f, TextBoxMath.startWidth(2f, 1f), 1e-6f)
+    }
+
+    @Test fun startWidthGrowsWithZoom() {
+        assertEquals(TextBoxMath.startWidth(6f, 1f) * 2f, TextBoxMath.startWidth(6f, 2f), 1e-6f)
+    }
+
+    @Test fun startWidthIsKeptWithinTheLimits() {
+        assertEquals(Placement.MIN_WIDTH, TextBoxMath.startWidth(0.1f, 1f), 0f)
+        assertEquals(Placement.MAX_WIDTH, TextBoxMath.startWidth(400f, 3f), 0f)
+    }
+
+    @Test fun widthFractionFromAFontSize() {
+        // 12 pt text that is 5 units wide per point is 60 pt wide: a tenth of a 600 pt page.
+        assertEquals(0.1f, TextBoxMath.widthFraction(12f, 5f, 600f), 1e-6f)
+    }
+
+    @Test(expected = IllegalArgumentException::class) fun aPageWithNoWidthIsRejected() {
+        TextBoxMath.widthFraction(12f, 5f, 0f)
+    }
 }
