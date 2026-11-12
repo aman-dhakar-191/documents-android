@@ -80,6 +80,8 @@ import io.github.amandhakar.documents.edit.TextLine
 import io.github.amandhakar.documents.edit.PageHit
 import io.github.amandhakar.documents.edit.PageRow
 import io.github.amandhakar.documents.edit.PlacedSignature
+import io.github.amandhakar.documents.edit.PlacedText
+import io.github.amandhakar.documents.edit.TextStamp
 import io.github.amandhakar.documents.edit.Placement
 import io.github.amandhakar.documents.document.NormPoint
 import io.github.amandhakar.documents.document.PageGeometry
@@ -192,10 +194,10 @@ fun PageList(
                     left = placing.left * viewportW,
                     top = placing.top * viewportH,
                     width = widthOnScreen,
-                    height = widthOnScreen / editing.aspect,
+                    height = widthOnScreen / editing.floatingAspect,
                     scrollX = horizontal.value.toFloat(),
                     pageWidth = widthPx.toFloat(),
-                    signatureAspect = editing.aspect,
+                    signatureAspect = editing.floatingAspect,
                 )
                 if (hit != null) editing.onPlace(hit) else editing.onMiss()
             }
@@ -348,6 +350,9 @@ private fun PageImage(
             val pageAspect = pageSize.width.toFloat() / pageSize.height
             for (placed in editing.placed) {
                 if (placed.page == index) SignatureOnPage(editing, placed, pageSize, pageAspect)
+            }
+            for (text in editing.placedTexts) {
+                if (text.place.page == index) NewTextOnPage(text, pageSize, pageAspect)
             }
         }
         if (selection != null && pageSize.width > 0 && pageSize.height > 0) {
@@ -572,6 +577,13 @@ private fun SelectionHandle(
 class EditingUi(
     val signature: ImageBitmap,
     val aspect: Float,
+    /** The picture being positioned (the signature, or the new text) and its width / height. */
+    val floating: ImageBitmap,
+    val floatingAspect: Float,
+    /** True when what is being positioned is new text (the signature can't be redrawn then). */
+    val floatingIsText: Boolean,
+    /** New text boxes already placed on pages. */
+    val placedTexts: List<PlacedText>,
     val placed: List<PlacedSignature>,
     val placing: PlacedSignature?,
     val onPlacingChange: (PlacedSignature) -> Unit,
@@ -630,7 +642,7 @@ private fun BoxScope.FloatingSignature(
     val current by rememberUpdatedState(placing)
     val viewportAspect = viewportW / viewportH
     val widthPx = placing.width * viewportW
-    val heightPx = widthPx / editing.aspect
+    val heightPx = widthPx / editing.floatingAspect
     val leftPx = placing.left * viewportW
     val topPx = placing.top * viewportH
 
@@ -639,18 +651,18 @@ private fun BoxScope.FloatingSignature(
             .offset { IntOffset(leftPx.roundToInt(), topPx.roundToInt()) }
             .size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() })
             .border(2.dp, SignatureFrame)
-            .pointerInput(viewportW, viewportH, editing.aspect) {
+            .pointerInput(viewportW, viewportH, editing.floatingAspect) {
                 detectDragGestures { change, drag ->
                     change.consume()
                     editing.onPlacingChange(
-                        Placement.moved(current, drag.x / viewportW, drag.y / viewportH, editing.aspect, viewportAspect),
+                        Placement.moved(current, drag.x / viewportW, drag.y / viewportH, editing.floatingAspect, viewportAspect),
                     )
                 }
             },
     ) {
         Image(
-            bitmap = editing.signature,
-            contentDescription = "Your signature",
+            bitmap = editing.floating,
+            contentDescription = if (editing.floatingIsText) "New text" else "Your signature",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.FillBounds,
         )
@@ -659,17 +671,18 @@ private fun BoxScope.FloatingSignature(
                 .align(Alignment.BottomEnd)
                 .size(28.dp)
                 .background(SignatureFrame, CircleShape)
-                .pointerInput(viewportW, viewportH, editing.aspect) {
+                .pointerInput(viewportW, viewportH, editing.floatingAspect) {
                     detectDragGestures { change, drag ->
                         change.consume()
-                        editing.onPlacingChange(Placement.resized(current, drag.x / viewportW, editing.aspect, viewportAspect))
+                        editing.onPlacingChange(Placement.resized(current, drag.x / viewportW, editing.floatingAspect, viewportAspect))
                     }
                 },
         )
     }
 
     // The bar goes under the signature, or above it when there is no room below.
-    val barW = with(density) { (3 * 48).dp.toPx() }
+    val buttons = if (editing.floatingIsText) 2 else 3
+    val barW = with(density) { (buttons * 48).dp.toPx() }
     val barH = with(density) { 48.dp.toPx() }
     val gap = with(density) { 8.dp.toPx() }
     val barLeft = leftPx.coerceIn(0f, (viewportW - barW).coerceAtLeast(0f))
@@ -682,7 +695,9 @@ private fun BoxScope.FloatingSignature(
         tonalElevation = 3.dp,
     ) {
         Row {
-            IconButton(onClick = editing.onRedraw) { Icon(DocIcons.Edit, contentDescription = "Change the signature") }
+            if (!editing.floatingIsText) {
+                IconButton(onClick = editing.onRedraw) { Icon(DocIcons.Edit, contentDescription = "Change the signature") }
+            }
             IconButton(onClick = editing.onCancel) { Icon(DocIcons.Close, contentDescription = "Cancel") }
             IconButton(onClick = onConfirm) { Icon(DocIcons.Check, contentDescription = "Place signature here") }
         }
@@ -746,4 +761,24 @@ private fun coverColorAround(page: Bitmap, found: PageLines, line: TextLine): In
     val ys = listOf((line.top * sy).toInt() - margin, (line.bottom * sy).toInt() + margin)
     val samples = xs.flatMap { x -> ys.map { y -> page.getPixel(x.coerceIn(0, page.width - 1), y.coerceIn(0, page.height - 1)) } }
     return ColorSample.average(samples)
+}
+
+/** A new text box already placed on a page, drawn from a picture of the text where it will be saved. */
+@Composable
+private fun BoxScope.NewTextOnPage(text: PlacedText, pageSize: IntSize, pageAspect: Float) {
+    val density = LocalDensity.current
+    val stamp = remember(text.text) { TextStamp.render(text.text) } ?: return
+    val image = remember(stamp) { stamp.bitmap.asImageBitmap() }
+    val height = Placement.height(text.place.width, text.aspect, pageAspect)
+    Image(
+        bitmap = image,
+        contentDescription = "New text: ${text.text}",
+        modifier = Modifier
+            .offset { IntOffset((text.place.left * pageSize.width).roundToInt(), (text.place.top * pageSize.height).roundToInt()) }
+            .size(
+                with(density) { (text.place.width * pageSize.width).toDp() },
+                with(density) { (height * pageSize.height).toDp() },
+            ),
+        contentScale = ContentScale.FillBounds,
+    )
 }

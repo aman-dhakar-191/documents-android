@@ -8,6 +8,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.amandhakar.documents.edit.PageLines
 import io.github.amandhakar.documents.edit.PdfSigner
+import io.github.amandhakar.documents.edit.PlacedText
+import io.github.amandhakar.documents.edit.TextBoxMath
+import io.github.amandhakar.documents.edit.TextStamp
 import io.github.amandhakar.documents.edit.PdfText
 import io.github.amandhakar.documents.edit.PdfTextLines
 import io.github.amandhakar.documents.edit.TextEdit
@@ -46,11 +49,18 @@ data class EditState(
     val textEdits: List<TextEdit> = emptyList(),
     /** The line being changed right now (its dialog is open). */
     val editingLine: LineEdit? = null,
+    /** New text boxes placed but not saved yet. */
+    val placedTexts: List<PlacedText> = emptyList(),
+    /** The new text being positioned right now (shown in place of the signature), or null. */
+    val floatingText: FloatingText? = null,
 ) {
     /** Changes that would be written by Save. */
-    val hasPending: Boolean get() = placed.isNotEmpty() || textEdits.isNotEmpty()
+    val hasPending: Boolean get() = placed.isNotEmpty() || textEdits.isNotEmpty() || placedTexts.isNotEmpty()
     val hasEdits: Boolean get() = hasPending || placing != null || editingLine != null
 }
+
+/** New text being positioned: the text and the picture shown while it is moved. */
+class FloatingText(val text: String, val stamp: TextStamp)
 
 /** A line of text the person tapped: what to show in the box, and the colour that will cover the old text. */
 data class LineEdit(val page: Int, val pageLines: PageLines, val line: TextLine, val cover: Int, val initialText: String)
@@ -127,20 +137,51 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     /** Starts positioning the signature, in the middle of the screen. */
     fun startPlacing() = _state.update { s ->
         val signature = s.signature ?: return@update s
-        s.copy(placing = Placement.initial(0, signature.width.toFloat() / signature.height, VIEWPORT_ASPECT))
+        s.copy(floatingText = null, placing = Placement.initial(0, signature.width.toFloat() / signature.height, VIEWPORT_ASPECT))
     }
 
     /** The signature being positioned moved or resized (as fractions of the visible area). */
+    /** Starts positioning a new piece of [text]; false (and a message) when it can't be used. */
+    fun startPlacingText(text: String) {
+        val prepared = TextBoxMath.prepare(text)
+        val bad = PdfText.unsupported(prepared)
+        val stamp = if (prepared.isEmpty() || bad.isNotEmpty()) null else TextStamp.render(prepared)
+        _state.update { s ->
+            if (stamp == null) {
+                s.copy(message = if (bad.isNotEmpty()) "Can't use ${bad.joinToString(" ")} yet." else "Type some text first.")
+            } else {
+                s.copy(
+                    textMode = false,
+                    floatingText = FloatingText(prepared, stamp),
+                    placing = Placement.initial(0, stamp.aspect, VIEWPORT_ASPECT),
+                )
+            }
+        }
+    }
+
+    fun undoLastNewText() = _state.update { it.copy(placedTexts = it.placedTexts.dropLast(1)) }
+
     fun updatePlacing(placed: PlacedSignature) = _state.update { s -> if (s.placing == null) s else s.copy(placing = placed) }
-    fun cancelPlacing() = _state.update { it.copy(placing = null) }
+    fun cancelPlacing() = _state.update { it.copy(placing = null, floatingText = null) }
 
     /** The signature was dropped at [placed] on a page. */
-    fun placeAt(placed: PlacedSignature) = _state.update { it.copy(placing = null, placed = it.placed + placed) }
+    fun placeAt(placed: PlacedSignature) = _state.update { s ->
+        val text = s.floatingText
+        if (text != null) {
+            s.copy(
+                placing = null,
+                floatingText = null,
+                placedTexts = s.placedTexts + PlacedText(placed, text.text, text.stamp.aspect, text.stamp.baselineRatio),
+            )
+        } else {
+            s.copy(placing = null, placed = s.placed + placed)
+        }
+    }
 
     fun undoLast() = _state.update { it.copy(placed = it.placed.dropLast(1)) }
     fun undoLastText() = _state.update { it.copy(textEdits = it.textEdits.dropLast(1)) }
 
-    fun enterTextMode() = _state.update { it.copy(textMode = true, placing = null) }
+    fun enterTextMode() = _state.update { it.copy(textMode = true, placing = null, floatingText = null) }
     fun exitTextMode() = _state.update { it.copy(textMode = false, editingLine = null) }
 
     // A private copy of the open PDF that PdfBox reads the text from (PdfBox needs a file).
@@ -228,7 +269,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         loadingPages.clear()
         _state.update {
             it.copy(
-                placing = null, placed = emptyList(), padOpen = false,
+                placing = null, placed = emptyList(), padOpen = false, placedTexts = emptyList(), floatingText = null,
                 textMode = false, lines = emptyMap(), textEdits = emptyList(), editingLine = null,
             )
         }
@@ -252,7 +293,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
-                    write(source, destination, signature, snapshot.placed, snapshot.textEdits)
+                    write(source, destination, signature, snapshot.placed, snapshot.textEdits, snapshot.placedTexts)
                     null
                 } catch (e: Throwable) {
                     e
@@ -261,7 +302,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
             _state.update {
                 if (result == null) {
                     it.copy(
-                        saving = false, placed = emptyList(), placing = null, textEdits = emptyList(),
+                        saving = false, placed = emptyList(), placing = null, textEdits = emptyList(), placedTexts = emptyList(),
                         lines = emptyMap(), textMode = false, message = "Saved",
                     )
                 } else {
@@ -273,7 +314,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun write(source: Uri, destination: Uri?, signature: Bitmap?, placements: List<PlacedSignature>, textEdits: List<TextEdit>) {
+    private fun write(source: Uri, destination: Uri?, signature: Bitmap?, placements: List<PlacedSignature>, textEdits: List<TextEdit>, newTexts: List<PlacedText>) {
         val context = getApplication<Application>()
         val resolver = context.contentResolver
         val input = File.createTempFile("source", ".pdf", context.cacheDir)
@@ -283,7 +324,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                 input.outputStream().use { stream.copyTo(it) }
             }
             val pages = PdfSigner.pageCount(context, input) ?: throw IOException("Could not read the PDF")
-            PdfSigner.edit(context, input, signature, placements, textEdits, output)
+            PdfSigner.edit(context, input, signature, placements, textEdits, newTexts, output)
             // Never touch the target with something that doesn't open as the same PDF.
             if (!PdfSigner.looksValid(context, output, expectedPages = pages)) {
                 throw IOException("The signed PDF did not pass its check")

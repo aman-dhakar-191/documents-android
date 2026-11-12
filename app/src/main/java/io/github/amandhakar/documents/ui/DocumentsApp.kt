@@ -53,6 +53,7 @@ import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
 import io.github.amandhakar.documents.edit.PdfText
+import io.github.amandhakar.documents.edit.TextBoxMath
 import io.github.amandhakar.documents.edit.SaveNames
 import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.share.ShareFiles
@@ -80,6 +81,7 @@ fun DocumentsApp(
     val gridState = rememberLazyGridState()
     var askSaveChoice by rememberSaveable { mutableStateOf(false) }
     var askDiscard by rememberSaveable { mutableStateOf(false) }
+    var askNewText by rememberSaveable { mutableStateOf(false) }
 
     // True while the PDF on screen was opened by another app: Back then returns to that app.
     var openedFromOutside by rememberSaveable { mutableStateOf(false) }
@@ -233,6 +235,41 @@ fun DocumentsApp(
                 },
             )
         }
+        if (askNewText) {
+            var typed by remember { mutableStateOf("") }
+            val unusable = PdfText.unsupported(TextBoxMath.prepare(typed))
+            AlertDialog(
+                onDismissRequest = { askNewText = false },
+                title = { Text("Add text") },
+                text = {
+                    OutlinedTextField(
+                        value = typed,
+                        onValueChange = { typed = it },
+                        label = { Text("Text") },
+                        isError = unusable.isNotEmpty(),
+                        supportingText = {
+                            Text(
+                                if (unusable.isEmpty()) {
+                                    "Then drag it onto a page and resize it."
+                                } else {
+                                    "Can't use ${unusable.joinToString(" ")} yet: only Latin letters, digits and common symbols."
+                                },
+                            )
+                        },
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        enabled = unusable.isEmpty() && TextBoxMath.prepare(typed).isNotEmpty(),
+                        onClick = {
+                            askNewText = false
+                            editViewModel.startPlacingText(typed)
+                        },
+                    ) { Text("Add") }
+                },
+                dismissButton = { TextButton(onClick = { askNewText = false }) { Text("Cancel") } },
+            )
+        }
         if (askDiscard) {
             AlertDialog(
                 onDismissRequest = { askDiscard = false },
@@ -307,6 +344,23 @@ fun DocumentsApp(
                                                 if (edit.textMode) editViewModel.exitTextMode() else editViewModel.enterTextMode()
                                             },
                                         )
+                                        DropdownMenuItem(
+                                            text = { Text("Add text") },
+                                            onClick = {
+                                                menuOpen = false
+                                                editViewModel.exitTextMode()
+                                                askNewText = true
+                                            },
+                                        )
+                                        if (edit.placedTexts.isNotEmpty()) {
+                                            DropdownMenuItem(
+                                                text = { Text("Undo last added text") },
+                                                onClick = {
+                                                    menuOpen = false
+                                                    editViewModel.undoLastNewText()
+                                                },
+                                            )
+                                        }
                                         if (edit.textEdits.isNotEmpty()) {
                                             DropdownMenuItem(
                                                 text = { Text("Undo last text change") },
@@ -346,6 +400,7 @@ fun DocumentsApp(
                     }
                     is ViewerState.Ready -> {
                         val image = signatureImage
+                        val floatingImage = remember(edit.floatingText) { edit.floatingText?.stamp?.bitmap?.asImageBitmap() }
                         PageList(
                             document = s.document,
                             zoom = zoom,
@@ -353,8 +408,13 @@ fun DocumentsApp(
                             editing = EditingUi(
                                 signature = image ?: noSignature,
                                 aspect = edit.signature?.let { it.width.toFloat() / it.height } ?: 1f,
+                                floating = floatingImage ?: image ?: noSignature,
+                                floatingAspect = edit.floatingText?.stamp?.aspect
+                                    ?: edit.signature?.let { it.width.toFloat() / it.height } ?: 1f,
+                                floatingIsText = edit.floatingText != null,
+                                placedTexts = edit.placedTexts,
                                 placed = edit.placed,
-                                placing = if (image != null) edit.placing else null,
+                                placing = if (image != null || floatingImage != null) edit.placing else null,
                                 onPlacingChange = { editViewModel.updatePlacing(it) },
                                 onPlace = { editViewModel.placeAt(it) },
                                 onMiss = {
