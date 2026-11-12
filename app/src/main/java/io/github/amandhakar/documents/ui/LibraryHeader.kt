@@ -1,5 +1,6 @@
 package io.github.amandhakar.documents.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +20,10 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -24,8 +31,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import io.github.amandhakar.documents.library.SortOrder
 
-/** The top of the library: the title with Search and Browse, or the search box while searching. */
+/** The top of the library: the title with Search, Sort and Browse, or the search box while searching. */
 @Composable
 fun LibraryHeader(
     searching: Boolean,
@@ -34,6 +42,8 @@ fun LibraryHeader(
     onSearch: () -> Unit,
     onCloseSearch: () -> Unit,
     onBrowse: () -> Unit,
+    sort: SortOrder,
+    onSort: (SortOrder) -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).height(64.dp)
@@ -41,7 +51,7 @@ fun LibraryHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (searching) {
-            val focus = FocusRequester()
+            val focus = remember { FocusRequester() }
             LaunchedEffect(Unit) { focus.requestFocus() }
             TextField(
                 value = query,
@@ -66,6 +76,22 @@ fun LibraryHeader(
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onSearch) { Icon(DocIcons.Search, contentDescription = "Search files") }
+            var sortOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { sortOpen = true }) { Icon(DocIcons.Sort, contentDescription = "Sort files, now ${sort.label}") }
+                DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
+                    for (order in SortOrder.entries) {
+                        DropdownMenuItem(
+                            text = { Text(order.label) },
+                            trailingIcon = { if (order == sort) Icon(DocIcons.Check, contentDescription = "Selected") },
+                            onClick = {
+                                sortOpen = false
+                                onSort(order)
+                            },
+                        )
+                    }
+                }
+            }
             IconButton(onClick = onBrowse) { Icon(DocIcons.FolderOpen, contentDescription = "Browse for a file") }
         }
     }

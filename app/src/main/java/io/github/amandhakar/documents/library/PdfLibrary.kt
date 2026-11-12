@@ -4,7 +4,7 @@ import android.content.Context
 import android.provider.MediaStore.Files.FileColumns
 import io.github.amandhakar.documents.document.DocumentFormat
 
-/** Lists the PDFs, web pages and Word files on the phone from Android's media index. Needs [StorageAccess.hasAccess]. */
+/** Lists the PDFs, web pages, Word files and presentations on the phone from Android's media index. Needs [StorageAccess.hasAccess]. */
 object PdfLibrary {
     /** Blocking: call from a background thread. */
     @Suppress("DEPRECATION") // DATA is only used to show the folder name.
@@ -18,12 +18,12 @@ object PdfLibrary {
             FileColumns.DATE_MODIFIED,
             FileColumns.DATA,
         )
-        val selection = "${FileColumns.MIME_TYPE} IN (?, ?, ?, ?) OR ${FileColumns.DISPLAY_NAME} LIKE ? OR " +
+        val selection = "${FileColumns.MIME_TYPE} IN (?, ?, ?, ?, ?) OR ${FileColumns.DISPLAY_NAME} LIKE ? OR " +
             "${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ? OR " +
-            "${FileColumns.DISPLAY_NAME} LIKE ?"
+            "${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ?"
         val selectionArgs = arrayOf(
-            "application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME,
-            "%.pdf", "%.html", "%.htm", "%.xhtml", "%.docx",
+            "application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME,
+            "%.pdf", "%.html", "%.htm", "%.xhtml", "%.docx", "%.pptx",
         )
 
         val result = ArrayList<PdfFile>()

@@ -8,6 +8,7 @@ import io.github.amandhakar.documents.library.LibraryFilters
 import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.library.PdfFile
 import io.github.amandhakar.documents.library.PdfLibrary
+import io.github.amandhakar.documents.library.SortOrder
 import io.github.amandhakar.documents.library.StorageAccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
+    // How the list is ordered. Kept while the app is open; the list starts newest first each time.
+    private val _sort = MutableStateFlow(SortOrder.Newest)
+    val sort: StateFlow<SortOrder> = _sort
+
+    fun setSort(order: SortOrder) {
+        _sort.value = order
+    }
+
     private var job: Job? = null
 
     fun setQuery(query: String) {
@@ -62,7 +71,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun selectAll() {
-        (_state.value as? LibraryState.Ready)?.let { _selected.value = MultiSelect.all(LibraryFilters.apply(it.files, _filter.value, _query.value)) }
+        (_state.value as? LibraryState.Ready)?.let { _selected.value = MultiSelect.all(LibraryFilters.apply(it.files, _filter.value, _query.value, _sort.value)) }
     }
 
     /** Re-checks permission and re-reads the list. The old list stays on screen while it loads. */

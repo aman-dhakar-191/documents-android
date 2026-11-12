@@ -58,6 +58,14 @@
                 <data android:mimeType="text/html" />
                 <data android:mimeType="application/xhtml+xml" />
             </intent-filter>
+            <!-- PowerPoint files (.pptx). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+            </intent-filter>
             <!-- Word files (.docx). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

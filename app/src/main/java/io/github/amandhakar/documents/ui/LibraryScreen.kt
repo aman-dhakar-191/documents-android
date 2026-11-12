@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.PaddingValues
@@ -71,7 +73,7 @@ import io.github.amandhakar.documents.library.PdfFiles
 import io.github.amandhakar.documents.library.StorageAccess
 import io.github.amandhakar.documents.library.Thumbnails
 
-/** Every PDF, Word file and web page on the phone as a card (PDFs with a first-page preview), with chips to filter by kind. Tap a card to open it. */
+/** Every PDF, Word file, presentation and web page on the phone as a card (PDFs with a first-page preview), with chips to filter by kind. Tap a card to open it. */
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
@@ -82,6 +84,7 @@ fun LibraryScreen(
     val selected by viewModel.selected.collectAsState()
     val filter by viewModel.filter.collectAsState()
     val query by viewModel.query.collectAsState()
+    val sort by viewModel.sort.collectAsState()
     val context = LocalContext.current
 
     // Android 10 and older ask with a normal permission dialog.
@@ -105,7 +108,7 @@ fun LibraryScreen(
         }
         LibraryState.NeedsPermission -> Message(
             "To show your files here, Documents needs permission to see the files on your phone. " +
-                "It only looks for PDF, Word and web page files, and nothing leaves your phone. " +
+                "It only looks for PDF, Word, PowerPoint and web page files, and nothing leaves your phone. " +
                 "You can still open a single file with Browse without giving this permission.",
         ) {
             Button(onClick = {
@@ -141,7 +144,7 @@ fun LibraryScreen(
                         DefaultAppCard(defaultApp, samplePdf.uri)
                     }
                 }
-                val shown = LibraryFilters.apply(s.files, filter, query)
+                val shown = LibraryFilters.apply(s.files, filter, query, sort)
                 if (shown.isEmpty()) {
                     item(key = "none", span = { GridItemSpan(maxLineSpan) }) {
                         Text(
@@ -167,11 +170,12 @@ fun LibraryScreen(
     }
 }
 
-/** The chips that pick which kind of file to list: All, PDF, Web pages (each with how many there are). */
+/** The chips that pick which kind of file to list: All, PDF, Web pages, Word, PowerPoint (each with how many there are). They wrap onto more lines rather than hiding off to the side. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterRow(selected: LibraryFilter, counts: Map<LibraryFilter, Int>, onPick: (LibraryFilter) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+    FlowRow(
+        Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         for (filter in LibraryFilter.entries) {
@@ -287,7 +291,11 @@ private fun SelectBadge(selected: Boolean, modifier: Modifier = Modifier) {
 private fun Thumbnail(file: PdfFile, modifier: Modifier) {
     if (file.format != DocumentFormat.Pdf) {
         // A web page or Word file has no first page to show: an icon and its type instead.
-        val (icon, label) = if (file.format == DocumentFormat.Docx) DocIcons.Description to "Word" else DocIcons.Public to "Web page"
+        val (icon, label) = when (file.format) {
+            DocumentFormat.Docx -> DocIcons.Description to "Word"
+            DocumentFormat.Pptx -> DocIcons.Slideshow to "PowerPoint"
+            else -> DocIcons.Public to "Web page"
+        }
         Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)

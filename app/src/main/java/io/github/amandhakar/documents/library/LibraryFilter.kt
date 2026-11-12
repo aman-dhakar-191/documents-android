@@ -7,20 +7,22 @@ enum class LibraryFilter(val label: String) {
     All("All"),
     Pdf("PDF"),
     Web("Web pages"),
-    Word("Word");
+    Word("Word"),
+    Slides("PowerPoint");
 
     fun matches(format: DocumentFormat): Boolean = when (this) {
         All -> true
         Pdf -> format == DocumentFormat.Pdf
         Web -> format == DocumentFormat.Html
         Word -> format == DocumentFormat.Docx
+        Slides -> format == DocumentFormat.Pptx
     }
 }
 
 /** Filtering and counting the library list. Free of Android calls so it can be unit tested. */
 object LibraryFilters {
-    fun apply(files: List<PdfFile>, filter: LibraryFilter, query: String = ""): List<PdfFile> =
-        files.filter { filter.matches(it.format) && matchesQuery(it, query) }
+    fun apply(files: List<PdfFile>, filter: LibraryFilter, query: String = "", sort: SortOrder = SortOrder.Newest): List<PdfFile> =
+        Sorting.sort(files.filter { filter.matches(it.format) && matchesQuery(it, query) }, sort)
 
     /**
      * True when every word of [query] appears in the file's name or folder, ignoring case. An empty

@@ -1,13 +1,14 @@
 package io.github.amandhakar.documents.word
 
+import io.github.amandhakar.documents.ooxml.OoxmlException
+import io.github.amandhakar.documents.ooxml.OoxmlLimits
+import io.github.amandhakar.documents.ooxml.OoxmlZip
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import org.xml.sax.InputSource
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.StringReader
-import java.util.zip.ZipException
-import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
 /** Size limits that keep a hostile or huge file from using all the phone's memory or time. */
@@ -34,7 +35,6 @@ object DocxParser {
     private const val STYLES = "word/styles.xml"
     private const val NUMBERING = "word/numbering.xml"
     private const val RELS = "word/_rels/document.xml.rels"
-    private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "bmp", "webp")
 
 
     fun parse(input: InputStream, limits: DocxLimits = DocxLimits()): DocxDocument {
@@ -55,54 +55,28 @@ object DocxParser {
     private class Parts(val xml: Map<String, String>, val media: Map<String, ByteArray>)
 
     private fun readParts(input: InputStream, limits: DocxLimits): Parts {
-        val xml = HashMap<String, String>()
-        val media = HashMap<String, ByteArray>()
-        var entries = 0
-        var inflated = 0L
-        var imageTotal = 0L
+        val wanted = setOf(DOCUMENT, STYLES, NUMBERING, RELS)
         try {
-            ZipInputStream(input).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    if (++entries > limits.maxEntries) throw DocxException("This file has too many parts.")
-                    val name = entry.name
-                    val wanted = name == DOCUMENT || name == STYLES || name == NUMBERING || name == RELS
-                    val isMedia = name.startsWith("word/media/") && name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS
-                    val cap = when {
-                        wanted -> limits.maxXmlPartBytes
-                        isMedia -> limits.maxImageBytes
-                        else -> 0
-                    }
-                    val buffer = java.io.ByteArrayOutputStream()
-                    val chunk = ByteArray(16 * 1024)
-                    var size = 0
-                    var overCap = false
-                    while (true) {
-                        val n = zip.read(chunk)
-                        if (n < 0) break
-                        size += n
-                        inflated += n
-                        if (inflated > limits.maxInflatedBytes) throw DocxException("This file unpacks to more than the app can handle.")
-                        if (size <= cap) buffer.write(chunk, 0, n) else overCap = true
-                    }
-                    when {
-                        wanted && overCap -> throw DocxException("A part of this document is too big to open.")
-                        wanted -> xml[name] = buffer.toString(Charsets.UTF_8.name())
-                        isMedia && !overCap && imageTotal + size <= limits.maxTotalImageBytes -> {
-                            imageTotal += size
-                            media[name] = buffer.toByteArray()
-                        }
-                    }
-                }
-            }
-        } catch (e: ZipException) {
-            throw DocxException("This isn't a valid .docx file. It may be damaged or password-protected.")
+            val parts = OoxmlZip.read(
+                input,
+                OoxmlLimits(
+                    maxXmlPartBytes = limits.maxXmlPartBytes,
+                    maxImageBytes = limits.maxImageBytes,
+                    maxTotalImageBytes = limits.maxTotalImageBytes,
+                    maxEntries = limits.maxEntries,
+                    maxInflatedBytes = limits.maxInflatedBytes,
+                ),
+                wantXml = { it in wanted },
+                wantMedia = { it.startsWith("word/media/") },
+            )
+            return Parts(parts.xml, parts.media)
+        } catch (e: OoxmlException) {
+            // The same reader serves PowerPoint; here the file is a .docx.
+            throw DocxException(e.message.orEmpty().replace("valid Office file", "valid .docx file"))
         }
-        if (xml.isEmpty() && media.isEmpty() && entries == 0) {
-            throw DocxException("This isn't a valid .docx file. It may be damaged or password-protected.")
-        }
-        return Parts(xml, media)
     }
+
+    // ---- xml ----
 
     private fun parseRels(xml: String): Map<String, String> {
         val result = HashMap<String, String>()
