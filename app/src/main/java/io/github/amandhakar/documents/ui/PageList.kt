@@ -78,6 +78,7 @@ import io.github.amandhakar.documents.edit.PageLines
 import io.github.amandhakar.documents.edit.TextFit
 import io.github.amandhakar.documents.edit.TextEdit
 import io.github.amandhakar.documents.edit.TextLine
+import io.github.amandhakar.documents.edit.FontFamilyChoice
 import io.github.amandhakar.documents.edit.Highlight
 import io.github.amandhakar.documents.edit.MarkPoint
 import io.github.amandhakar.documents.edit.Marks
@@ -799,14 +800,14 @@ private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
         val fitted = remember(change.text, sizePx, boxWidthPx) {
             val full = measurer.measure(
                 change.text,
-                androidx.compose.ui.text.TextStyle(fontSize = with(density) { sizePx.toSp() }),
+                previewStyle(change, with(density) { sizePx.toSp() }),
                 maxLines = 1,
                 softWrap = false,
             )
             val fittedPx = TextFit.size(sizePx, boxWidthPx, full.size.width.toFloat())
             measurer.measure(
                 change.text,
-                androidx.compose.ui.text.TextStyle(fontSize = with(density) { fittedPx.toSp() }),
+                previewStyle(change, with(density) { fittedPx.toSp() }),
                 maxLines = 1,
                 softWrap = false,
             ) to fittedPx
@@ -814,10 +815,7 @@ private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
         val baselinePx = change.baseline * pageSize.height
         androidx.compose.foundation.text.BasicText(
             change.text,
-            style = androidx.compose.ui.text.TextStyle(
-                color = Color(change.ink),
-                fontSize = with(density) { fitted.second.toSp() },
-            ),
+            style = previewStyle(change, with(density) { fitted.second.toSp() }).copy(color = Color(change.ink)),
             maxLines = 1,
             softWrap = false,
             modifier = Modifier.offset {
@@ -923,3 +921,16 @@ private fun inkColorOf(page: Bitmap, found: PageLines, line: TextLine, backgroun
     page.getPixels(pixels, 0, width, left, top, width, height)
     return ColorSample.textColor(pixels, background)
 }
+
+/** The preview's text style for a change: its size and the closest built-in family, weight and slant. */
+private fun previewStyle(change: TextEdit, size: androidx.compose.ui.unit.TextUnit): androidx.compose.ui.text.TextStyle =
+    androidx.compose.ui.text.TextStyle(
+        fontSize = size,
+        fontFamily = when (change.font.family) {
+            FontFamilyChoice.Sans -> androidx.compose.ui.text.font.FontFamily.SansSerif
+            FontFamilyChoice.Serif -> androidx.compose.ui.text.font.FontFamily.Serif
+            FontFamilyChoice.Mono -> androidx.compose.ui.text.font.FontFamily.Monospace
+        },
+        fontWeight = if (change.font.bold) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+        fontStyle = if (change.font.italic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
+    )

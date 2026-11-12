@@ -11,6 +11,7 @@ data class TextWord(
     val width: Float,
     val height: Float,
     val fontSize: Float,
+    val font: FontStyleChoice = FontStyleChoice(),
 )
 
 /** A line of text on a page, in points from the top-left corner of the page. */
@@ -22,6 +23,7 @@ data class TextLine(
     val bottom: Float,
     val baseline: Float,
     val fontSize: Float,
+    val font: FontStyleChoice = FontStyleChoice(),
 )
 
 /** The lines of one page, with the page's size in points. [supported] is false for pages this can't handle (rotated ones). */
@@ -46,13 +48,23 @@ data class TextEdit(
     val cover: Int,
     /** The colour of the old text, used for the new text (black when it couldn't be told). */
     val ink: Int = 0xFF000000.toInt(),
+    /** The font family, weight and slant to draw the new text in (the closest standard font to the old text's). */
+    val font: FontStyleChoice = FontStyleChoice(),
 ) {
     /** True when [other] covers the same original line (so a new edit replaces this one). */
     fun sameLineAs(other: TextEdit): Boolean =
         page == other.page && kotlin.math.abs(left - other.left) < 0.002f && kotlin.math.abs(top - other.top) < 0.002f
 
     companion object {
-        fun forLine(page: Int, page0: PageLines, line: TextLine, text: String, cover: Int, ink: Int = 0xFF000000.toInt()): TextEdit = TextEdit(
+        fun forLine(
+            page: Int,
+            page0: PageLines,
+            line: TextLine,
+            text: String,
+            cover: Int,
+            ink: Int = 0xFF000000.toInt(),
+            font: FontStyleChoice = line.font,
+        ): TextEdit = TextEdit(
             page = page,
             left = line.left / page0.widthPt,
             top = line.top / page0.heightPt,
@@ -64,6 +76,7 @@ data class TextEdit(
             text = text,
             cover = cover,
             ink = ink,
+            font = font,
         )
     }
 }
@@ -84,6 +97,7 @@ object LineGrouping {
                 bottom = word.baseline + word.height * DESCENT,
                 baseline = word.baseline,
                 fontSize = word.fontSize,
+                font = word.font,
             )
             val c = current
             if (c != null && sameLine(c, wordLine)) {

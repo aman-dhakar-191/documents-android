@@ -124,7 +124,7 @@ object PdfSigner {
             content.addRect(x - COVER_PAD, boxBottom - COVER_PAD, boxWidth + 2 * COVER_PAD, boxHeight + 2 * COVER_PAD)
             content.fill()
             if (edit.text.isNotEmpty()) {
-                val font = PDType1Font.HELVETICA
+                val font = standardFont(edit.font)
                 val size = TextFit.size(edit.fontSizePt, boxWidth, font.getStringWidth(edit.text) / 1000f * edit.fontSizePt)
                 content.setNonStrokingColor((edit.ink shr 16) and 0xFF, (edit.ink shr 8) and 0xFF, edit.ink and 0xFF)
                 content.beginText()
@@ -198,6 +198,28 @@ object PdfSigner {
                     content.stroke()
                 }
             }
+        }
+    }
+
+    /** The standard PDF font for [style] (Helvetica, Times or Courier, with the bold and italic variants). */
+    private fun standardFont(style: FontStyleChoice): PDType1Font = when (style.family) {
+        FontFamilyChoice.Sans -> when {
+            style.bold && style.italic -> PDType1Font.HELVETICA_BOLD_OBLIQUE
+            style.bold -> PDType1Font.HELVETICA_BOLD
+            style.italic -> PDType1Font.HELVETICA_OBLIQUE
+            else -> PDType1Font.HELVETICA
+        }
+        FontFamilyChoice.Serif -> when {
+            style.bold && style.italic -> PDType1Font.TIMES_BOLD_ITALIC
+            style.bold -> PDType1Font.TIMES_BOLD
+            style.italic -> PDType1Font.TIMES_ITALIC
+            else -> PDType1Font.TIMES_ROMAN
+        }
+        FontFamilyChoice.Mono -> when {
+            style.bold && style.italic -> PDType1Font.COURIER_BOLD_OBLIQUE
+            style.bold -> PDType1Font.COURIER_BOLD
+            style.italic -> PDType1Font.COURIER_OBLIQUE
+            else -> PDType1Font.COURIER
         }
     }
 

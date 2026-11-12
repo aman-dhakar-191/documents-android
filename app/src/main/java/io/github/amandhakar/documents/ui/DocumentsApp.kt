@@ -58,6 +58,7 @@ import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
+import io.github.amandhakar.documents.edit.FontFamilyChoice
 import io.github.amandhakar.documents.edit.Marks
 import io.github.amandhakar.documents.edit.PdfText
 import io.github.amandhakar.documents.edit.TextBoxMath
@@ -225,11 +226,13 @@ fun DocumentsApp(
         }
         edit.editingLine?.let { target ->
             var text by remember(target) { mutableStateOf(target.initialText) }
+            var font by remember(target) { mutableStateOf(target.font) }
             val unusable = PdfText.unsupported(PdfText.clean(text))
             AlertDialog(
                 onDismissRequest = { editViewModel.cancelLineEdit() },
                 title = { Text("Change text") },
                 text = {
+                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it },
@@ -245,9 +248,22 @@ fun DocumentsApp(
                             )
                         },
                     )
+                    Text("Font (matched to the old text; change it if it is wrong)", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for ((family, label) in listOf(
+                            FontFamilyChoice.Sans to "Sans",
+                            FontFamilyChoice.Serif to "Serif",
+                            FontFamilyChoice.Mono to "Mono",
+                        )) {
+                            ChoiceButton(label, font.family == family) { font = font.copy(family = family) }
+                        }
+                        ChoiceButton("B", font.bold) { font = font.copy(bold = !font.bold) }
+                        ChoiceButton("I", font.italic) { font = font.copy(italic = !font.italic) }
+                    }
+                  }
                 },
                 confirmButton = {
-                    Button(enabled = unusable.isEmpty(), onClick = { editViewModel.applyLineEdit(text) }) { Text("Apply") }
+                    Button(enabled = unusable.isEmpty(), onClick = { editViewModel.applyLineEdit(text, font) }) { Text("Apply") }
                 },
                 dismissButton = {
                     Row {
@@ -557,3 +573,13 @@ private fun displayNameOf(context: android.content.Context, uri: Uri?): String? 
     }
 }
 
+/** A small on/off button: filled when [selected], outlined otherwise. */
+@Composable
+private fun ChoiceButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    val padding = PaddingValues(horizontal = 12.dp)
+    if (selected) {
+        Button(onClick = onClick, contentPadding = padding) { Text(label) }
+    } else {
+        androidx.compose.material3.OutlinedButton(onClick = onClick, contentPadding = padding) { Text(label) }
+    }
+}

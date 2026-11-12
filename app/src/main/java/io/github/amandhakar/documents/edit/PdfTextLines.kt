@@ -32,6 +32,19 @@ object PdfTextLines {
         }
     }
 
+    /** The standard font closest to [font] (from its name and descriptor). */
+    private fun styleOf(font: com.tom_roush.pdfbox.pdmodel.font.PDFont): FontStyleChoice {
+        val d = font.fontDescriptor
+        return FontMatch.choose(
+            name = font.name,
+            fixedPitch = d?.isFixedPitch ?: false,
+            serif = d?.isSerif ?: false,
+            forceBold = d?.isForceBold ?: false,
+            italic = d?.isItalic ?: false,
+            weight = d?.fontWeight ?: 0f,
+        )
+    }
+
     /** Collects every word PdfBox finds, with its position in points from the top-left of the page. */
     private class WordCollector : PDFTextStripper() {
         val words = mutableListOf<TextWord>()
@@ -49,6 +62,7 @@ object PdfTextLines {
                 width = last.xDirAdj + last.widthDirAdj - first.xDirAdj,
                 height = height,
                 fontSize = size,
+                font = styleOf(first.font),
             )
         }
     }
