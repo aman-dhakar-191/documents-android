@@ -30,16 +30,19 @@ object PdfSigner {
         signature: Bitmap?,
         placements: List<PlacedSignature>,
         textEdits: List<TextEdit>,
+        newTexts: List<PlacedText>,
         output: File,
     ) {
-        require(placements.isNotEmpty() || textEdits.isNotEmpty()) { "nothing to change" }
+        require(placements.isNotEmpty() || textEdits.isNotEmpty() || newTexts.isNotEmpty()) { "nothing to change" }
         require(placements.isEmpty() || signature != null) { "no signature picture" }
         PDFBoxResourceLoader.init(context.applicationContext)
         // Scratch files, not memory, for the parts of big documents.
         PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
             require(placements.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
             require(textEdits.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
+            require(newTexts.all { it.place.page in 0 until doc.numberOfPages }) { "no such page" }
             for (edit in textEdits) drawTextEdit(doc, edit)
+            for (text in newTexts) drawNewText(doc, text)
             if (signature == null) {
                 doc.save(output)
                 return
@@ -89,6 +92,28 @@ object PdfSigner {
                 content.showText(edit.text)
                 content.endText()
             }
+        }
+    }
+
+    /** Writes a new piece of text (Helvetica) where the person placed it, sized so it spans the width they chose. */
+    private fun drawNewText(doc: PDDocument, newText: PlacedText) {
+        require(newText.text.isNotEmpty() && PdfText.unsupported(newText.text).isEmpty()) { "unsupported characters" }
+        val page = doc.getPage(newText.place.page)
+        require(PdfCoordinates.normalizeRotation(page.rotation) == 0) { "rotated pages can't be edited yet" }
+        val crop = page.cropBox
+        val w = crop.width
+        val h = crop.height
+        val font = PDType1Font.HELVETICA
+        val size = TextBoxMath.fontSizePt(newText.place.width, w, font.getStringWidth(newText.text) / 1000f)
+        val heightFraction = Placement.height(newText.place.width, newText.aspect, w / h)
+        val baseline = TextBoxMath.baselineFromTop(newText.place.top, heightFraction, newText.baselineRatio)
+        PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { content ->
+            content.setNonStrokingColor(0, 0, 0)
+            content.beginText()
+            content.setFont(font, size)
+            content.newLineAtOffset(crop.lowerLeftX + newText.place.left * w, crop.lowerLeftY + (1f - baseline) * h)
+            content.showText(newText.text)
+            content.endText()
         }
     }
 
