@@ -6,8 +6,8 @@ tagged **[Certain]**, **[Likely]** or **[Guessing]**.
 ## What stays the same
 
 - No third-party library unless there is a reason and a licence check; each one is asked about first.
-- No new permission without a new decision in SPEC. In particular the only network use is the per-page "Load online parts" switch on web pages (decided by the owner, off by default): nothing is uploaded and
-  nothing is fetched. [Certain] This also means web pages can't load their remote images, styles or scripts.
+- No new permission without a new decision in SPEC. In particular the only network use is the per-page "Load online parts" switch on web pages (decided by the owner, off by default): nothing is uploaded, and
+  nothing is fetched unless the person taps that switch for a page. [Certain] Without the switch, web pages can't load their remote images, styles or scripts.
 - The `Document` interface (page count, render a page to a bitmap, optional text selection) and `DocumentFormat` /
   `DocumentOpener` routing by MIME type stay the way new formats plug in. [Certain] PDF, PowerPoint and Word (laid
   out into pages) fit "pages as bitmaps"; a web page does not, so it gets its own screen.
