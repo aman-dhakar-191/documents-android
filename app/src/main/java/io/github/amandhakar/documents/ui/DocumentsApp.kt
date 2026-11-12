@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.edit.ReaderChrome
 import io.github.amandhakar.documents.web.FindText
 import io.github.amandhakar.documents.slides.SlideScreen
+import io.github.amandhakar.documents.word.WordPagesScreen
 import io.github.amandhakar.documents.word.WordScreen
 import io.github.amandhakar.documents.web.WebController
 import io.github.amandhakar.documents.web.WebNotice
@@ -99,6 +100,9 @@ fun DocumentsApp(
     var searching by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     var zoom by rememberSaveable { mutableStateOf(1f) }
+    // Word files: paper pages (default) or the reflowed reading view, and the zoom of the pages.
+    var wordPages by rememberSaveable { mutableStateOf(ViewPrefs.wordPages(context)) }
+    var wordZoom by rememberSaveable { mutableStateOf(1f) }
     // Lives here (not in the library screen) so the list keeps its scroll position after reading a PDF.
     val gridState = rememberLazyGridState()
     var askSaveChoice by rememberSaveable { mutableStateOf(false) }
@@ -119,6 +123,7 @@ fun DocumentsApp(
     var openedFromOutside by rememberSaveable { mutableStateOf(false) }
 
     fun openOurselves(uri: Uri) {
+        wordZoom = 1f
         openedFromOutside = false
         allowScripts = false
         allowOnline = false
@@ -363,6 +368,17 @@ fun DocumentsApp(
                             IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
                         },
                         actions = {
+                            if (state is ViewerState.Docx) {
+                                if (wordPages) {
+                                    CompactButton("\u2212", enabled = wordZoom > Zoom.MIN) { wordZoom = Zoom.zoomOut(wordZoom) }
+                                    Text(ReaderChrome.zoomLabel(wordZoom))
+                                    CompactButton("+", enabled = wordZoom < Zoom.MAX) { wordZoom = Zoom.zoomIn(wordZoom) }
+                                }
+                                CompactButton(if (wordPages) "Reading" else "Pages") {
+                                    wordPages = !wordPages
+                                    ViewPrefs.setWordPages(context, wordPages)
+                                }
+                            }
                             val officeUri = (state as? ViewerState.Docx)?.uri ?: (state as? ViewerState.Pptx)?.uri
                             val officeMime = if (state is ViewerState.Pptx) DocumentFormat.PPTX_MIME else DocumentFormat.DOCX_MIME
                             IconButton(
@@ -523,7 +539,7 @@ fun DocumentsApp(
                         onOpen = { openOurselves(it) },
                     )
                     ViewerState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    is ViewerState.Docx -> WordScreen(document = s.document)
+                    is ViewerState.Docx -> if (wordPages) WordPagesScreen(s.document, wordZoom) else WordScreen(s.document)
                     is ViewerState.Pptx -> SlideScreen(deck = s.deck)
                     is ViewerState.Web -> WebDocumentScreen(
                         uri = s.uri,

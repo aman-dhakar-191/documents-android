@@ -47,7 +47,19 @@ object DocxParser {
         val body = doc.documentElement.children("body").firstOrNull() ?: throw DocxException("The document has no body.")
         val reader = BodyReader(styles, numbering, rels, parts.media, limits)
         reader.readBlocks(body)
-        return DocxDocument(reader.blocks, reader.truncated)
+        return DocxDocument(reader.blocks, reader.truncated, readPage(body.child("sectPr")))
+    }
+
+    /** The page of the document's last (or only) section. No section properties means A4. */
+    private fun readPage(sect: Element?): PageSetup {
+        if (sect == null) return PageSetup()
+        val size = sect.child("pgSz")
+        val mar = sect.child("pgMar")
+        return PageSetup.fromTwips(
+            size?.wAttr("w")?.toIntOrNull(), size?.wAttr("h")?.toIntOrNull(),
+            mar?.wAttr("top")?.toIntOrNull(), mar?.wAttr("right")?.toIntOrNull(),
+            mar?.wAttr("bottom")?.toIntOrNull(), mar?.wAttr("left")?.toIntOrNull(),
+        )
     }
 
     // ---- reading the zip ----
@@ -275,23 +287,33 @@ object DocxParser {
             }
             val runs = ArrayList<DocxRun>()
             val images = ArrayList<DocxImage>()
-            collectRuns(p, runs, images)
-            out += DocxParagraph(mergeRuns(runs), heading, list, align)
+            val flags = RunFlags()
+            collectRuns(p, runs, images, flags)
+            out += DocxParagraph(
+                mergeRuns(runs), heading, list, align,
+                pageBreakBefore = pPr?.child("pageBreakBefore").isOn(),
+                pageBreakAfter = flags.pageBreak,
+            )
             out += images
         }
 
-        private fun collectRuns(parent: Element, runs: MutableList<DocxRun>, images: MutableList<DocxImage>) {
+        /** Things a run can say about the paragraph around it. */
+        private class RunFlags {
+            var pageBreak = false
+        }
+
+        private fun collectRuns(parent: Element, runs: MutableList<DocxRun>, images: MutableList<DocxImage>, flags: RunFlags) {
             for (e in parent.childElements()) {
                 if (e.namespaceURI != W) continue
                 when (e.localName) {
-                    "r" -> readRun(e, runs, images)
+                    "r" -> readRun(e, runs, images, flags)
                     // links, tracked insertions, smart tags and simple fields wrap more runs
-                    "hyperlink", "ins", "smartTag", "fldSimple" -> collectRuns(e, runs, images)
+                    "hyperlink", "ins", "smartTag", "fldSimple" -> collectRuns(e, runs, images, flags)
                 }
             }
         }
 
-        private fun readRun(r: Element, runs: MutableList<DocxRun>, images: MutableList<DocxImage>) {
+        private fun readRun(r: Element, runs: MutableList<DocxRun>, images: MutableList<DocxImage>, flags: RunFlags) {
             val rPr = r.child("rPr")
             val size = rPr?.valOf("sz")?.toIntOrNull()
             val color = rPr?.valOf("color")?.takeIf { Regex("^[0-9A-Fa-f]{6}$").matches(it) }?.uppercase()
@@ -302,7 +324,7 @@ object DocxParser {
                 when (c.localName) {
                     "t" -> text.append(c.textContent)
                     "tab" -> text.append('\t')
-                    "br", "cr" -> if (c.wAttr("type") != "page") text.append('\n')
+                    "br", "cr" -> if (c.wAttr("type") == "page") flags.pageBreak = true else text.append('\n')
                     "noBreakHyphen" -> text.append('-')
                     "drawing", "pict" -> findImage(c)?.let { images += it }
                 }
