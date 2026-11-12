@@ -13,15 +13,18 @@ class UnsupportedFormatException(val mimeType: String?) : IOException("Unsupport
 object DocumentOpener {
     /** Blocking: call from a background thread. */
     fun open(context: Context, uri: Uri): Document {
-        val resolver = context.contentResolver
-        val mimeType = resolver.getType(uri)
-        val format = DocumentFormat.fromMimeType(mimeType)
-            ?: DocumentFormat.fromFileName(displayName(context, uri) ?: uri.lastPathSegment)
-            ?: throw UnsupportedFormatException(mimeType)
+        val format = formatOf(context, uri) ?: throw UnsupportedFormatException(context.contentResolver.getType(uri))
         return when (format) {
             DocumentFormat.Pdf -> openPdf(context, uri)
+            // Web pages aren't shown as pages: the screen asks for [formatOf] first and shows them itself.
+            DocumentFormat.Html -> throw UnsupportedFormatException("text/html")
         }
     }
+
+    /** The format of the file at [uri] (by its MIME type, then by its name), or null if it isn't supported. Blocking. */
+    fun formatOf(context: Context, uri: Uri): DocumentFormat? =
+        DocumentFormat.fromMimeType(context.contentResolver.getType(uri))
+            ?: DocumentFormat.fromFileName(displayName(context, uri) ?: uri.lastPathSegment)
 
     private fun openPdf(context: Context, uri: Uri): Document {
         val direct = context.contentResolver.openFileDescriptor(uri, "r")

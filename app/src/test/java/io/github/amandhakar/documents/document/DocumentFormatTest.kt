@@ -33,4 +33,19 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromFileName("notes.docx"))
         assertNull(DocumentFormat.fromFileName("report.pdf.exe"))
     }
+
+    @Test fun webPageMimeTypes() {
+        assertEquals(DocumentFormat.Html, DocumentFormat.fromMimeType("text/html"))
+        assertEquals(DocumentFormat.Html, DocumentFormat.fromMimeType("text/html; charset=utf-8"))
+        assertEquals(DocumentFormat.Html, DocumentFormat.fromMimeType("application/xhtml+xml"))
+        assertNull(DocumentFormat.fromMimeType("text/plain"))
+    }
+
+    @Test fun webPageFileNames() {
+        assertEquals(DocumentFormat.Html, DocumentFormat.fromFileName("index.html"))
+        assertEquals(DocumentFormat.Html, DocumentFormat.fromFileName("PAGE.HTM"))
+        assertEquals(DocumentFormat.Html, DocumentFormat.fromFileName("a.b.xhtml"))
+        assertNull(DocumentFormat.fromFileName("script.js"))
+        assertNull(DocumentFormat.fromFileName("page.html.exe"))
+    }
 }
