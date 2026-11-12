@@ -26,8 +26,8 @@ data class DocxLimits(
  * colour, bullet and numbered lists, tables and pictures. Nothing is written anywhere and nothing is run. Free of
  * Android calls so it can be unit tested.
  *
- * Not read (yet): headers and footers, footnotes, text boxes, fields, floating pictures' wrapping, comments, tracked
- * deletions (insertions are shown), and numbering that comes from a style instead of the paragraph itself.
+ * Not read (yet): headers and footers, footnotes, text boxes, fields, floating pictures' wrapping, comments, and tracked
+ * deletions (insertions are shown).
  */
 object DocxParser {
     private const val DOCUMENT = "word/document.xml"
@@ -133,19 +133,46 @@ object DocxParser {
 
     // ---- styles and numbering ----
 
-    internal class Styles(private val headingByStyleId: Map<String, Int>) {
-        fun headingLevel(styleId: String?): Int =
-            // A style the styles part names wins; otherwise the usual ids ("Heading2") still work, e.g. with no styles part.
-            styleId?.let { headingByStyleId[it] ?: headingLevelOf(it, "") } ?: 0
+    internal class StyleInfo(val id: String, val name: String, val basedOn: String?, val numId: String?, val ilvl: Int?)
+
+    internal class Styles(private val byId: Map<String, StyleInfo>) {
+        /** The style and the styles it is based on, nearest first (stops after 10 to survive a loop). */
+        private fun chain(styleId: String?): List<StyleInfo> {
+            val out = ArrayList<StyleInfo>()
+            var current = styleId
+            while (current != null && out.size < 10) {
+                val style = byId[current] ?: break
+                out += style
+                current = style.basedOn
+            }
+            return out
+        }
+
+        fun headingLevel(styleId: String?): Int {
+            if (styleId == null) return 0
+            // A style the styles part names wins (also through "based on"); otherwise the usual ids ("Heading2") still work.
+            return chain(styleId).firstNotNullOfOrNull { headingLevelOf(it.id, it.name).takeIf { l -> l > 0 } } ?: headingLevelOf(styleId, "")
+        }
+
+        /** The list a style puts its paragraphs in (numId and level, level null when the style doesn't say), or null. */
+        fun numbering(styleId: String?): Pair<String, Int?>? {
+            val style = chain(styleId).firstOrNull { it.numId != null } ?: return null
+            return style.numId!! to style.ilvl
+        }
 
         companion object {
             fun parse(xml: String): Styles {
-                val map = HashMap<String, Int>()
+                val map = HashMap<String, StyleInfo>()
                 for (style in dom(xml).documentElement.children("style")) {
                     val id = style.wAttr("styleId") ?: continue
-                    val name = style.valOf("name")?.lowercase().orEmpty()
-                    val level = headingLevelOf(id, name)
-                    if (level > 0) map[id] = level
+                    val numPr = style.child("pPr")?.child("numPr")
+                    map[id] = StyleInfo(
+                        id = id,
+                        name = style.valOf("name")?.lowercase().orEmpty(),
+                        basedOn = style.valOf("basedOn"),
+                        numId = numPr?.valOf("numId"),
+                        ilvl = numPr?.valOf("ilvl")?.toIntOrNull(),
+                    )
                 }
                 return Styles(map)
             }
@@ -159,19 +186,26 @@ object DocxParser {
         private val abstracts: Map<String, Map<Int, Level>>,
         /** numId -> abstractNumId */
         private val nums: Map<String, String>,
+        /** (abstractNumId, paragraph style id) -> the level that style is tied to, e.g. "List Bullet 2" -> 1 */
+        private val styleLevels: Map<Pair<String, String>, Int> = emptyMap(),
     ) {
         fun level(numId: String, ilvl: Int): Level? = abstracts[nums[numId]]?.get(ilvl)
+
+        /** The level a paragraph style is tied to in list [numId], or null. */
+        fun levelForStyle(numId: String, styleId: String): Int? = nums[numId]?.let { styleLevels[it to styleId] }
 
         companion object {
             fun parse(xml: String): Numbering {
                 val root = dom(xml).documentElement
                 val abstracts = HashMap<String, Map<Int, Level>>()
+                val styleLevels = HashMap<Pair<String, String>, Int>()
                 for (a in root.children("abstractNum")) {
                     val id = a.wAttr("abstractNumId") ?: continue
                     val levels = HashMap<Int, Level>()
                     for (l in a.children("lvl")) {
                         val ilvl = l.wAttr("ilvl")?.toIntOrNull() ?: continue
                         levels[ilvl] = Level(l.valOf("numFmt") ?: "decimal", l.valOf("start")?.toIntOrNull() ?: 1)
+                        l.valOf("pStyle")?.let { styleLevels[id to it] = ilvl }
                     }
                     abstracts[id] = levels
                 }
@@ -181,7 +215,7 @@ object DocxParser {
                     val abstractId = n.valOf("abstractNumId") ?: continue
                     nums[id] = abstractId
                 }
-                return Numbering(abstracts, nums)
+                return Numbering(abstracts, nums, styleLevels)
             }
         }
     }
@@ -242,16 +276,26 @@ object DocxParser {
                 else -> DocxAlign.Start
             }
             var list: DocxListMark? = null
+            val styleId = pPr?.valOf("pStyle")
             val numPr = pPr?.child("numPr")
-            val numId = numPr?.valOf("numId")
-            if (numPr != null && numId != null && numId != "0") {
-                val ilvl = numPr.valOf("ilvl")?.toIntOrNull()?.coerceIn(0, 8) ?: 0
-                val level = numbering.level(numId, ilvl)
-                val format = level?.format ?: "bullet"
+            var numId = numPr?.valOf("numId")
+            var level = numPr?.valOf("ilvl")?.toIntOrNull()
+            if (numId == null) {
+                // No list on the paragraph itself: Word's own list styles ("List Bullet", "List Number") carry it.
+                styles.numbering(styleId)?.let { (id, styleLevel) ->
+                    numId = id
+                    if (level == null) level = styleLevel
+                }
+            }
+            val listId = numId
+            if (listId != null && listId != "0") {
+                val ilvl = (level ?: styleId?.let { numbering.levelForStyle(listId, it) } ?: 0).coerceIn(0, 8)
+                val def = numbering.level(listId, ilvl)
+                val format = def?.format ?: "bullet"
                 val label = if (format == "bullet") {
                     NumberLabels.bullet(ilvl)
                 } else {
-                    NumberLabels.label(format, counter.next(numId, ilvl, level?.start ?: 1), ilvl)
+                    NumberLabels.label(format, counter.next(listId, ilvl, def?.start ?: 1), ilvl)
                 }
                 list = DocxListMark(ilvl, label)
             }

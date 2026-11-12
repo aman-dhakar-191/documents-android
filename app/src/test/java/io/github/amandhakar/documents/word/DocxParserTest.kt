@@ -157,6 +157,60 @@ class DocxParserTest {
         assertNull((doc.blocks[0] as DocxParagraph).list)
     }
 
+    private val listStyles = "<w:styles $NS>" +
+        "<w:style w:styleId=\"ListBullet\"><w:name w:val=\"List Bullet\"/><w:pPr><w:numPr><w:numId w:val=\"2\"/></w:numPr></w:pPr></w:style>" +
+        "<w:style w:styleId=\"MyBullet\"><w:name w:val=\"My bullet\"/><w:basedOn w:val=\"ListBullet\"/></w:style>" +
+        "<w:style w:styleId=\"ListNumber\"><w:name w:val=\"List Number\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>" +
+        "<w:style w:styleId=\"ListNumber2\"><w:name w:val=\"List Number 2\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>" +
+        "<w:style w:styleId=\"LoopA\"><w:name w:val=\"a\"/><w:basedOn w:val=\"LoopB\"/></w:style>" +
+        "<w:style w:styleId=\"LoopB\"><w:name w:val=\"b\"/><w:basedOn w:val=\"LoopA\"/></w:style></w:styles>"
+
+    private fun styled(text: String, style: String) = p(text, "<w:pPr><w:pStyle w:val=\"$style\"/></w:pPr>")
+
+    @Test fun aListStyleMakesItsParagraphsListItems() {
+        val doc = parse(
+            "word/document.xml" to body(styled("a", "ListBullet") + styled("b", "ListNumber") + styled("c", "ListNumber")),
+            "word/styles.xml" to listStyles, "word/numbering.xml" to numbering,
+        )
+        assertEquals(listOf("\u2022", "1.", "2."), doc.blocks.map { (it as DocxParagraph).list!!.label })
+    }
+
+    @Test fun aStyleBasedOnAListStyleIsAListToo() {
+        val doc = parse("word/document.xml" to body(styled("a", "MyBullet")), "word/styles.xml" to listStyles, "word/numbering.xml" to numbering)
+        assertEquals("\u2022", (doc.blocks.single() as DocxParagraph).list!!.label)
+    }
+
+    @Test fun aParagraphWithNumIdZeroOverridesItsListStyle() {
+        val xml = p("a", "<w:pPr><w:pStyle w:val=\"ListBullet\"/><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr>")
+        val doc = parse("word/document.xml" to body(xml), "word/styles.xml" to listStyles, "word/numbering.xml" to numbering)
+        assertNull((doc.blocks.single() as DocxParagraph).list)
+    }
+
+    @Test fun aStyleLoopDoesNotHangOrMakeAList() {
+        val doc = parse("word/document.xml" to body(styled("a", "LoopA")), "word/styles.xml" to listStyles)
+        assertNull((doc.blocks.single() as DocxParagraph).list)
+    }
+
+    @Test fun theLevelCanComeFromTheStyleLinkInTheNumberingPart() {
+        val numbering2 = "<w:numbering $NS><w:abstractNum w:abstractNumId=\"0\">" +
+            "<w:lvl w:ilvl=\"0\"><w:numFmt w:val=\"decimal\"/><w:pStyle w:val=\"ListNumber\"/></w:lvl>" +
+            "<w:lvl w:ilvl=\"1\"><w:numFmt w:val=\"lowerLetter\"/><w:pStyle w:val=\"ListNumber2\"/></w:lvl></w:abstractNum>" +
+            "<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num></w:numbering>"
+        val doc = parse(
+            "word/document.xml" to body(styled("a", "ListNumber") + styled("b", "ListNumber2")),
+            "word/styles.xml" to listStyles, "word/numbering.xml" to numbering2,
+        )
+        assertEquals(listOf(0, 1), doc.blocks.map { (it as DocxParagraph).list!!.level })
+        assertEquals(listOf("1.", "a."), doc.blocks.map { (it as DocxParagraph).list!!.label })
+    }
+
+    @Test fun aHeadingStyleBasedOnAHeadingIsAHeading() {
+        val styles = "<w:styles $NS><w:style w:styleId=\"Big\"><w:name w:val=\"My big\"/><w:basedOn w:val=\"Heading2\"/></w:style>" +
+            "<w:style w:styleId=\"Heading2\"><w:name w:val=\"heading 2\"/></w:style></w:styles>"
+        val doc = parse("word/document.xml" to body(styled("a", "Big")), "word/styles.xml" to styles)
+        assertEquals(2, (doc.blocks.single() as DocxParagraph).headingLevel)
+    }
+
     @Test fun readsTablesWithRowsAndCells() {
         val xml = "<w:tbl><w:tr><w:tc>${p("a")}</w:tc><w:tc>${p("b")}</w:tc></w:tr><w:tr><w:tc>${p("c")}</w:tc><w:tc>${p("d")}</w:tc></w:tr></w:tbl>"
         val table = parse("word/document.xml" to body(xml)).blocks.single() as DocxTable
