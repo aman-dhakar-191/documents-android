@@ -32,7 +32,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.magnifier
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,6 +72,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.document.Document
+import io.github.amandhakar.documents.edit.PageHit
+import io.github.amandhakar.documents.edit.PageRow
 import io.github.amandhakar.documents.edit.PlacedSignature
 import io.github.amandhakar.documents.edit.Placement
 import io.github.amandhakar.documents.document.NormPoint
@@ -164,6 +169,30 @@ fun PageList(
                         editing = editing,
                     )
                 }
+            }
+        }
+        // The signature being positioned floats above the pages, so the pages can be scrolled under it;
+        // it lands on whichever page it is over when the tick is pressed.
+        val placing = editing?.placing
+        if (editing != null && placing != null) {
+            val density = LocalDensity.current
+            val viewportW = with(density) { maxWidth.toPx() }
+            val viewportH = with(density) { maxHeight.toPx() }
+            FloatingSignature(editing, placing, viewportW, viewportH) {
+                val info = listState.layoutInfo
+                val rows = info.visibleItemsInfo.map { PageRow(it.index, it.offset, it.size) }
+                val widthOnScreen = placing.width * viewportW
+                val hit = PageHit.resolve(
+                    rows = rows,
+                    left = placing.left * viewportW,
+                    top = placing.top * viewportH,
+                    width = widthOnScreen,
+                    height = widthOnScreen / editing.aspect,
+                    scrollX = horizontal.value.toFloat(),
+                    pageWidth = widthPx.toFloat(),
+                    signatureAspect = editing.aspect,
+                )
+                if (hit != null) editing.onPlace(hit) else editing.onMiss()
             }
         }
     }
@@ -285,10 +314,7 @@ private fun PageImage(
         if (editing != null && pageSize.width > 0 && pageSize.height > 0) {
             val pageAspect = pageSize.width.toFloat() / pageSize.height
             for (placed in editing.placed) {
-                if (placed.page == index) SignatureOnPage(editing, placed, pageSize, pageAspect, null)
-            }
-            editing.placing?.takeIf { it.page == index }?.let {
-                SignatureOnPage(editing, it, pageSize, pageAspect, editing.onPlacingChange)
+                if (placed.page == index) SignatureOnPage(editing, placed, pageSize, pageAspect)
             }
         }
         if (selection != null && pageSize.width > 0 && pageSize.height > 0) {
@@ -506,75 +532,116 @@ private fun SelectionHandle(
     }
 }
 
-/** What the page list needs to draw signatures: the picture, those already placed and the one being placed. */
+/**
+ * What the page list needs to draw signatures: the picture, those already placed on pages, and the one
+ * being positioned ([placing], given as fractions of the visible area, not of a page).
+ */
 class EditingUi(
     val signature: ImageBitmap,
     val aspect: Float,
     val placed: List<PlacedSignature>,
     val placing: PlacedSignature?,
     val onPlacingChange: (PlacedSignature) -> Unit,
+    /** The tick: the signature was dropped on this page spot. */
+    val onPlace: (PlacedSignature) -> Unit,
+    /** The tick was pressed while the signature was not over any page. */
+    val onMiss: () -> Unit,
+    val onCancel: () -> Unit,
+    val onRedraw: () -> Unit,
 )
 
 private val SignatureFrame = Color(0xFF3390FF)
 
-/**
- * A signature on a page. With [onChange] it is the one being placed: drag it to move it and drag the
- * round handle in its corner to resize it. Without, it is drawn as it will be saved.
- */
+/** A signature already placed on a page, drawn where it will be saved. */
 @Composable
-private fun BoxScope.SignatureOnPage(
-    editing: EditingUi,
-    placed: PlacedSignature,
-    pageSize: IntSize,
-    pageAspect: Float,
-    onChange: ((PlacedSignature) -> Unit)?,
-) {
+private fun BoxScope.SignatureOnPage(editing: EditingUi, placed: PlacedSignature, pageSize: IntSize, pageAspect: Float) {
     val density = LocalDensity.current
     val height = Placement.height(placed.width, editing.aspect, pageAspect)
-    val widthPx = placed.width * pageSize.width
-    val heightPx = height * pageSize.height
-    val current by rememberUpdatedState(placed)
-    var box = Modifier
-        .offset { IntOffset((placed.left * pageSize.width).roundToInt(), (placed.top * pageSize.height).roundToInt()) }
-        .size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() })
-    if (onChange != null) {
-        box = box
+    Image(
+        bitmap = editing.signature,
+        contentDescription = "Your signature",
+        modifier = Modifier
+            .offset { IntOffset((placed.left * pageSize.width).roundToInt(), (placed.top * pageSize.height).roundToInt()) }
+            .size(
+                with(density) { (placed.width * pageSize.width).toDp() },
+                with(density) { (height * pageSize.height).toDp() },
+            ),
+        contentScale = ContentScale.FillBounds,
+    )
+}
+
+/**
+ * The signature being positioned, above the pages: drag it to move it, drag the round handle in its corner to
+ * resize it, and scroll the pages underneath with any other finger-drag. A small bar offers draw again, cancel
+ * and tick ([onConfirm]).
+ */
+@Composable
+private fun BoxScope.FloatingSignature(
+    editing: EditingUi,
+    placing: PlacedSignature,
+    viewportW: Float,
+    viewportH: Float,
+    onConfirm: () -> Unit,
+) {
+    val density = LocalDensity.current
+    val current by rememberUpdatedState(placing)
+    val viewportAspect = viewportW / viewportH
+    val widthPx = placing.width * viewportW
+    val heightPx = widthPx / editing.aspect
+    val leftPx = placing.left * viewportW
+    val topPx = placing.top * viewportH
+
+    Box(
+        Modifier
+            .offset { IntOffset(leftPx.roundToInt(), topPx.roundToInt()) }
+            .size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() })
             .border(2.dp, SignatureFrame)
-            .pointerInput(pageSize, pageAspect, editing.aspect) {
+            .pointerInput(viewportW, viewportH, editing.aspect) {
                 detectDragGestures { change, drag ->
                     change.consume()
-                    onChange(
-                        Placement.moved(
-                            current,
-                            drag.x / pageSize.width,
-                            drag.y / pageSize.height,
-                            editing.aspect,
-                            pageAspect,
-                        ),
+                    editing.onPlacingChange(
+                        Placement.moved(current, drag.x / viewportW, drag.y / viewportH, editing.aspect, viewportAspect),
                     )
                 }
-            }
-    }
-    Box(box) {
+            },
+    ) {
         Image(
             bitmap = editing.signature,
             contentDescription = "Your signature",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.FillBounds,
         )
-        if (onChange != null) {
-            Box(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(28.dp)
-                    .background(SignatureFrame, CircleShape)
-                    .pointerInput(pageSize, pageAspect, editing.aspect) {
-                        detectDragGestures { change, drag ->
-                            change.consume()
-                            onChange(Placement.resized(current, drag.x / pageSize.width, editing.aspect, pageAspect))
-                        }
-                    },
-            )
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .size(28.dp)
+                .background(SignatureFrame, CircleShape)
+                .pointerInput(viewportW, viewportH, editing.aspect) {
+                    detectDragGestures { change, drag ->
+                        change.consume()
+                        editing.onPlacingChange(Placement.resized(current, drag.x / viewportW, editing.aspect, viewportAspect))
+                    }
+                },
+        )
+    }
+
+    // The bar goes under the signature, or above it when there is no room below.
+    val barW = with(density) { (3 * 48).dp.toPx() }
+    val barH = with(density) { 48.dp.toPx() }
+    val gap = with(density) { 8.dp.toPx() }
+    val barLeft = leftPx.coerceIn(0f, (viewportW - barW).coerceAtLeast(0f))
+    val below = topPx + heightPx + gap
+    val barTop = if (below + barH <= viewportH) below else (topPx - barH - gap).coerceAtLeast(0f)
+    Surface(
+        modifier = Modifier.offset { IntOffset(barLeft.roundToInt(), barTop.roundToInt()) },
+        shape = RoundedCornerShape(50),
+        shadowElevation = 6.dp,
+        tonalElevation = 3.dp,
+    ) {
+        Row {
+            IconButton(onClick = editing.onRedraw) { Icon(DocIcons.Edit, contentDescription = "Change the signature") }
+            IconButton(onClick = editing.onCancel) { Icon(DocIcons.Close, contentDescription = "Cancel") }
+            IconButton(onClick = onConfirm) { Icon(DocIcons.Check, contentDescription = "Place signature here") }
         }
     }
 }
