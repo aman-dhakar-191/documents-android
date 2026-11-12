@@ -18,6 +18,9 @@ import java.io.IOException
  * The page's own content is kept as it is; everything is added on top. Covered text is NOT removed from the
  * file (it is still there under the box). Blocking: call from a background thread.
  */
+/** What erasing old text achieved: how many characters were really removed, and the pages (0-based) where it had to be skipped. */
+data class EraseOutcome(val removedCharacters: Int, val failedPages: List<Int>)
+
 object PdfSigner {
     /**
      * Reads [input], applies [textEdits] (each covers a line and writes new text), draws [signature] at every
@@ -33,8 +36,9 @@ object PdfSigner {
         textEdits: List<TextEdit>,
         newTexts: List<PlacedText>,
         marks: List<PageMark>,
+        eraseOld: Boolean,
         output: File,
-    ) {
+    ): EraseOutcome {
         require(placements.isNotEmpty() || textEdits.isNotEmpty() || newTexts.isNotEmpty() || marks.isNotEmpty()) {
             "nothing to change"
         }
@@ -45,13 +49,14 @@ object PdfSigner {
             require(placements.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
             require(textEdits.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
             require(newTexts.all { it.place.page in 0 until doc.numberOfPages }) { "no such page" }
+            val outcome = if (eraseOld) eraseOldText(doc, textEdits) else EraseOutcome(0, emptyList())
             for (edit in textEdits) drawTextEdit(doc, edit)
             for (text in newTexts) drawNewText(doc, text)
             require(marks.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
             for (mark in marks) drawMark(doc, mark)
             if (signature == null) {
                 doc.save(output)
-                return
+                return outcome
             }
             val image = LosslessFactory.createFromImage(doc, signature)
             val signatureAspect = signature.width.toFloat() / signature.height
@@ -69,7 +74,37 @@ object PdfSigner {
                 }
             }
             doc.save(output)
+            return outcome
         }
+    }
+
+    /**
+     * Really removes the old text under each change (see [TextEraser]). A page where that can't be done safely is left as it
+     * is and listed in the result; the change is then only covered.
+     */
+    private fun eraseOldText(doc: PDDocument, textEdits: List<TextEdit>): EraseOutcome {
+        var removed = 0
+        val failed = mutableListOf<Int>()
+        for ((pageIndex, edits) in textEdits.groupBy { it.page }) {
+            val crop = doc.getPage(pageIndex).cropBox
+            val boxes = edits.map {
+                PageBoxPt(
+                    it.left * crop.width,
+                    it.top * crop.height,
+                    (it.left + it.width) * crop.width,
+                    (it.top + it.height) * crop.height,
+                )
+            }
+            try {
+                val count = TextEraser.erase(doc, pageIndex, boxes)
+                if (count == 0) failed += pageIndex else removed += count
+            } catch (e: UnsupportedOperationException) {
+                failed += pageIndex
+            } catch (e: IOException) {
+                failed += pageIndex
+            }
+        }
+        return EraseOutcome(removed, failed)
     }
 
     /** Covers the old line with a box and writes the new text over it (Helvetica; shrunk a little if it is longer). */

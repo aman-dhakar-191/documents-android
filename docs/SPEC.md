@@ -63,8 +63,12 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     most 200 characters; rotated pages not supported). Stage 3: **Highlight** (tap a line, tap
     again to remove: a translucent yellow box drawn over the text so the words stay readable) and **Draw** (a
     finger pen in three colours; a toggle switches between drawing and scrolling the pages; works on rotated
-    pages too). Both are saved into the page content with the other changes. Next stages (not started): really
-    removing the old text from the page content, matching the font.
+    pages too). Both are saved into the page content with the other changes. Stage 4 (experimental, off by
+    default): the Save dialog has "Also remove the old text from the file". It drops the characters under each
+    change from the page's own `Tj` / `TJ` text operators and moves the pen on by their widths so the text after
+    them stays put; it then still covers and retypes as before. It refuses and leaves the page as it is (only
+    covered) for rotated pages, vertical text, text inside forms, or any content it can't match exactly, and
+    says which pages. Text drawn as outlines or as an image can't be removed. Not started: matching the font.
 
 ## Phases
 | Phase | Scope | Status |
