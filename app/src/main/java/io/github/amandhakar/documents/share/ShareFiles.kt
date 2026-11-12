@@ -20,7 +20,7 @@ object ShareFiles {
      */
     fun sharePdfs(context: Context, uris: List<Uri>): Boolean = shareFiles(context, uris, "application/pdf")
 
-    /** The type to share a mix of files under: their common type, or any type (`*/*`) when they differ or there are none. */
+    /** The type to share a mix of files under: their common type, or the match-anything type when they differ or there are none. */
     fun commonMimeType(types: List<String>): String = types.distinct().singleOrNull() ?: "*/*"
 
     /** Shares one or more files of the given [mimeType]. Same rules as [sharePdfs]. */
