@@ -38,4 +38,12 @@ class ReaderChromeTest {
         assertEquals("125%", ReaderChrome.zoomLabel(1.25f))
         assertEquals("50%", ReaderChrome.zoomLabel(0.5f))
     }
+
+    @Test fun summaryOfNothing() = assertEquals("No changes", ReaderChrome.changeSummary(0, 0, 0, 0))
+    @Test fun summaryOfOneKind() = assertEquals("1 signature", ReaderChrome.changeSummary(1, 0, 0, 0))
+    @Test fun summaryPluralises() = assertEquals("3 text changes", ReaderChrome.changeSummary(0, 3, 0, 0))
+    @Test fun summaryOfTwoKinds() = assertEquals("1 signature and 1 text change", ReaderChrome.changeSummary(1, 1, 0, 0))
+    @Test fun summaryOfManyKinds() =
+        assertEquals("2 signatures, 1 text change, 1 added text and 4 highlights or drawings", ReaderChrome.changeSummary(2, 1, 1, 4))
+    @Test fun summaryIgnoresNegativeCounts() = assertEquals("1 signature", ReaderChrome.changeSummary(1, -2, 0, 0))
 }

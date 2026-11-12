@@ -8,7 +8,9 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -114,16 +116,18 @@ fun WebDocumentScreen(uri: Uri, allowScripts: Boolean, modifier: Modifier = Modi
         if (blocked > 0) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 6.dp,
-                tonalElevation = 3.dp,
             ) {
-                Text(
-                    "$blocked online ${if (blocked == 1) "part was" else "parts were"} blocked, so this page may look incomplete. " +
-                        "Documents has no internet access.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(12.dp),
-                )
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(WebNotice.title(blocked), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        WebNotice.EXPLANATION,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
