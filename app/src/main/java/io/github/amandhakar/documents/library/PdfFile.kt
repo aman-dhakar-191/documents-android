@@ -25,7 +25,7 @@ data class PdfFile(
 
 /** Text and ordering for the PDF cards. Kept free of Android calls so it can be unit tested. */
 object PdfFiles {
-    private val EXTENSIONS = listOf(".pdf", ".xhtml", ".html", ".htm")
+    private val EXTENSIONS = listOf(".pdf", ".xhtml", ".html", ".htm", ".docx")
 
     /** "Report.PDF" -> "Report", "page.html" -> "page". Names without a known ending are left alone. */
     fun title(name: String): String {

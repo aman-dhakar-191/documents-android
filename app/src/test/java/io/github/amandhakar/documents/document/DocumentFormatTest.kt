@@ -16,7 +16,8 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromMimeType(null))
         assertNull(DocumentFormat.fromMimeType(""))
         assertNull(DocumentFormat.fromMimeType("application/octet-stream"))
-        assertNull(DocumentFormat.fromMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+        assertNull(DocumentFormat.fromMimeType("application/msword"))
+        assertNull(DocumentFormat.fromMimeType("application/vnd.openxmlformats-officedocument.presentationml.presentation"))
         assertNull(DocumentFormat.fromMimeType("application/pdfx"))
     }
 
@@ -52,5 +53,21 @@ class DocumentFormatTest {
         assertEquals(DocumentFormat.Html, DocumentFormat.fromFileName("a.b.xhtml"))
         assertNull(DocumentFormat.fromFileName("script.js"))
         assertNull(DocumentFormat.fromFileName("page.html.exe"))
+    }
+
+    @Test fun docxMimeType() {
+        assertEquals(DocumentFormat.Docx, DocumentFormat.fromMimeType(DocumentFormat.DOCX_MIME))
+        assertEquals(DocumentFormat.DOCX_MIME, DocumentFormat.Docx.mimeType)
+    }
+
+    @Test fun docxFileName() {
+        assertEquals(DocumentFormat.Docx, DocumentFormat.fromFileName("letter.docx"))
+        assertEquals(DocumentFormat.Docx, DocumentFormat.fromFileName("LETTER.DOCX"))
+    }
+
+    @Test fun oldAndTemplateWordFilesAreNotSupported() {
+        assertNull(DocumentFormat.fromFileName("old.doc"))
+        assertNull(DocumentFormat.fromFileName("template.dotx"))
+        assertNull(DocumentFormat.fromFileName("macro.docm"))
     }
 }

@@ -12,11 +12,14 @@ class LibraryFilterTest {
         file(1, DocumentFormat.Pdf),
         file(2, DocumentFormat.Html),
         file(3, DocumentFormat.Pdf),
+        file(4, DocumentFormat.Docx),
     )
 
-    @Test fun allShowsEverythingInTheSameOrder() = assertEquals(listOf(1L, 2L, 3L), LibraryFilters.apply(files, LibraryFilter.All).map { it.id })
+    @Test fun allShowsEverythingInTheSameOrder() = assertEquals(listOf(1L, 2L, 3L, 4L), LibraryFilters.apply(files, LibraryFilter.All).map { it.id })
 
     @Test fun pdfShowsOnlyPdfs() = assertEquals(listOf(1L, 3L), LibraryFilters.apply(files, LibraryFilter.Pdf).map { it.id })
+
+    @Test fun wordShowsOnlyWordFiles() = assertEquals(listOf(4L), LibraryFilters.apply(files, LibraryFilter.Word).map { it.id })
 
     @Test fun webShowsOnlyWebPages() = assertEquals(listOf(2L), LibraryFilters.apply(files, LibraryFilter.Web).map { it.id })
 
@@ -24,7 +27,8 @@ class LibraryFilterTest {
 
     @Test fun countsPerChip() {
         val counts = LibraryFilters.counts(files)
-        assertEquals(3, counts[LibraryFilter.All])
+        assertEquals(4, counts[LibraryFilter.All])
+        assertEquals(1, counts[LibraryFilter.Word])
         assertEquals(2, counts[LibraryFilter.Pdf])
         assertEquals(1, counts[LibraryFilter.Web])
     }

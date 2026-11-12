@@ -6,12 +6,14 @@ import io.github.amandhakar.documents.document.DocumentFormat
 enum class LibraryFilter(val label: String) {
     All("All"),
     Pdf("PDF"),
-    Web("Web pages");
+    Web("Web pages"),
+    Word("Word");
 
     fun matches(format: DocumentFormat): Boolean = when (this) {
         All -> true
         Pdf -> format == DocumentFormat.Pdf
         Web -> format == DocumentFormat.Html
+        Word -> format == DocumentFormat.Docx
     }
 }
 

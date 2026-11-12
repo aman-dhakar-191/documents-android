@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.edit.ReaderChrome
 import io.github.amandhakar.documents.web.FindText
+import io.github.amandhakar.documents.word.WordScreen
 import io.github.amandhakar.documents.web.WebController
 import io.github.amandhakar.documents.web.WebNotice
 import io.github.amandhakar.documents.edit.ReaderTool
@@ -336,7 +337,7 @@ fun DocumentsApp(
                         onQuery = { libraryViewModel.setQuery(it) },
                         onSearch = { searching = true },
                         onCloseSearch = closeSearch,
-                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml")) },
+                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME)) },
                     )
                 } else if (state is ViewerState.Web && findOpen) {
                     WebFindBar(
@@ -349,6 +350,23 @@ fun DocumentsApp(
                         },
                         onNext = { webController.findNext(it) },
                         onClose = closeFind,
+                    )
+                } else if (state is ViewerState.Docx) {
+                    TopAppBar(
+                        expandedHeight = 48.dp,
+                        title = {},
+                        navigationIcon = {
+                            IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
+                        },
+                        actions = {
+                            val docxUri = (state as? ViewerState.Docx)?.uri
+                            IconButton(
+                                onClick = {
+                                    val shared = docxUri != null && ShareFiles.shareFiles(context, listOf(docxUri), DocumentFormat.DOCX_MIME)
+                                    if (!shared) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
+                                },
+                            ) { Icon(DocIcons.Share, contentDescription = "Share") }
+                        },
                     )
                 } else if (state is ViewerState.Web) {
                     TopAppBar(
@@ -500,6 +518,7 @@ fun DocumentsApp(
                         onOpen = { openOurselves(it) },
                     )
                     ViewerState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    is ViewerState.Docx -> WordScreen(document = s.document)
                     is ViewerState.Web -> WebDocumentScreen(
                         uri = s.uri,
                         allowScripts = allowScripts,

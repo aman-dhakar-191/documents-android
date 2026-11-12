@@ -83,4 +83,10 @@ object DocIcons {
     }
     val ArrowUp by lazy { icon("ArrowUp", "M7.41,15.41L12,10.83l4.59,4.58L18,14l-6,-6 -6,6z") }
     val ArrowDown by lazy { icon("ArrowDown", "M7.41,8.59L12,13.17l4.59,-4.58L18,10l-6,6 -6,-6z") }
+    val Description by lazy {
+        icon(
+            "Description",
+            "M14,2H6c-1.1,0 -1.99,0.9 -1.99,2L4,20c0,1.1 0.89,2 1.99,2H18c1.1,0 2,-0.9 2,-2V8l-6,-6zM16,18H8v-2h8v2zM16,14H8v-2h8v2zM13,9V3.5L18.5,9H13z",
+        )
+    }
 }
