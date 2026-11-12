@@ -791,7 +791,8 @@ private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
     )
     if (change.text.isNotEmpty()) {
         // Shrink the text to the old line's width if it is longer (as saving does), and put its baseline on the
-        // original line's baseline (Compose adds space above the letters, so aligning the tops would draw it too low).
+        // original line's baseline. This uses plain BasicText with a bare style: Material's Text would add its own
+        // line height and letter spacing, which pushes the letters below where they were measured.
         val measurer = androidx.compose.ui.text.rememberTextMeasurer()
         val sizePx = change.fontSizePt * scale
         val boxWidthPx = change.width * pageSize.width
@@ -811,10 +812,12 @@ private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
             ) to fittedPx
         }
         val baselinePx = change.baseline * pageSize.height
-        androidx.compose.material3.Text(
+        androidx.compose.foundation.text.BasicText(
             change.text,
-            color = Color(change.ink),
-            fontSize = with(density) { fitted.second.toSp() },
+            style = androidx.compose.ui.text.TextStyle(
+                color = Color(change.ink),
+                fontSize = with(density) { fitted.second.toSp() },
+            ),
             maxLines = 1,
             softWrap = false,
             modifier = Modifier.offset {
