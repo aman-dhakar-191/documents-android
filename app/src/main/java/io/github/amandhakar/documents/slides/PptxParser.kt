@@ -32,6 +32,8 @@ private val COLOR_ELEMENTS = setOf("srgbClr", "schemeClr", "sysClr", "prstClr")
  * shapes with fills, backgrounds in a single colour, and speaker notes. Nothing is written anywhere and nothing is
  * run. Free of Android calls so it can be unit tested.
  *
+ * The slide size is the file's own; a file that doesn't state one gets the standard widescreen 16:9 (13.33 x 7.5 in).
+ *
  * Shown as a labelled grey box (never dropped silently): charts, SmartArt, other embedded objects, pictures of a type
  * the phone can't show. Not drawn at all: connector lines, gradient and picture backgrounds (a plain colour is used),
  * rotation, shadows and effects, and animations and transitions. Shapes other than rectangles, rounded rectangles and
@@ -48,7 +50,7 @@ object PptxParser {
         val presXml = parts.xml[presPath] ?: throw OoxmlException("This isn't a PowerPoint file (ppt/presentation.xml is missing).")
         val pres = parseXml(presXml).documentElement
         val size = pres.kid(P, "sldSz")
-        val width = size?.attr("cx")?.toLongOrNull()?.takeIf { it > 0 } ?: 9_144_000L
+        val width = size?.attr("cx")?.toLongOrNull()?.takeIf { it > 0 } ?: 12_192_000L
         val height = size?.attr("cy")?.toLongOrNull()?.takeIf { it > 0 } ?: 6_858_000L
         val presRels = parts.xml[OoxmlZip.relsPathOf(presPath)]?.let { parseRelationships(it, "ppt") } ?: emptyMap()
         val ids = pres.kid(P, "sldIdLst")?.kids(P, "sldId")?.mapNotNull { it.relAttr("id") } ?: emptyList()

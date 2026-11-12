@@ -108,6 +108,21 @@ class PptxParserTest {
         assertFalse(deck.truncated)
     }
 
+    @Test fun aDeckWithNoStatedSizeGetsStandardWidescreen() {
+        val bytes = Deck(textBox("x")).bytes()
+        // Rebuild the same deck with the slide size left out.
+        val zip = java.util.zip.ZipInputStream(ByteArrayInputStream(bytes))
+        val parts = LinkedHashMap<String, Any>()
+        while (true) {
+            val e = zip.nextEntry ?: break
+            val text = zip.readBytes().toString(Charsets.UTF_8)
+            parts[e.name] = if (e.name == "ppt/presentation.xml") text.replace("<p:sldSz cx=\"9144000\" cy=\"6858000\"/>", "") else text
+        }
+        val deck = PptxParser.parse(ByteArrayInputStream(zipOf(parts)))
+        assertEquals(12_192_000L, deck.widthEmu)
+        assertEquals(6_858_000L, deck.heightEmu)
+    }
+
     @Test fun aTextBoxKeepsItsPositionAndTextFormatting() {
         val deck = Deck(textBox("Hello", "sz=\"2400\" b=\"1\" i=\"1\" u=\"sng\"", "<a:solidFill><a:srgbClr val=\"B3261E\"/></a:solidFill>")).parse()
         val t = texts(deck).single()
