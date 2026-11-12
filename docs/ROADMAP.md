@@ -55,6 +55,8 @@ PDF (which the PDF tools can then sign and mark up).
 
 ## Phase 5: PowerPoint (.pptx)
 
+**Status: stage 1 (open and read: slides drawn to scale) implemented with the app's own zip + XML code and no library, and a labelled grey box for charts, SmartArt and objects (stage 2). Stages 3 to 6 not started.**
+
 **Reality check:** [Certain] `.pptx` is a zip of XML files (OOXML). Android can unzip (`java.util.zip`) and parse XML
 (`XmlPullParser`) with no library. Old `.ppt` (binary) is a different format and is **not** planned.
 

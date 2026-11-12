@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.edit.ReaderChrome
 import io.github.amandhakar.documents.web.FindText
+import io.github.amandhakar.documents.slides.SlideScreen
 import io.github.amandhakar.documents.word.WordScreen
 import io.github.amandhakar.documents.web.WebController
 import io.github.amandhakar.documents.web.WebNotice
@@ -337,7 +338,7 @@ fun DocumentsApp(
                         onQuery = { libraryViewModel.setQuery(it) },
                         onSearch = { searching = true },
                         onCloseSearch = closeSearch,
-                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME)) },
+                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME)) },
                     )
                 } else if (state is ViewerState.Web && findOpen) {
                     WebFindBar(
@@ -351,7 +352,7 @@ fun DocumentsApp(
                         onNext = { webController.findNext(it) },
                         onClose = closeFind,
                     )
-                } else if (state is ViewerState.Docx) {
+                } else if (state is ViewerState.Docx || state is ViewerState.Pptx) {
                     TopAppBar(
                         expandedHeight = 48.dp,
                         title = {},
@@ -359,10 +360,11 @@ fun DocumentsApp(
                             IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
                         },
                         actions = {
-                            val docxUri = (state as? ViewerState.Docx)?.uri
+                            val officeUri = (state as? ViewerState.Docx)?.uri ?: (state as? ViewerState.Pptx)?.uri
+                            val officeMime = if (state is ViewerState.Pptx) DocumentFormat.PPTX_MIME else DocumentFormat.DOCX_MIME
                             IconButton(
                                 onClick = {
-                                    val shared = docxUri != null && ShareFiles.shareFiles(context, listOf(docxUri), DocumentFormat.DOCX_MIME)
+                                    val shared = officeUri != null && ShareFiles.shareFiles(context, listOf(officeUri), officeMime)
                                     if (!shared) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
                                 },
                             ) { Icon(DocIcons.Share, contentDescription = "Share") }
@@ -519,6 +521,7 @@ fun DocumentsApp(
                     )
                     ViewerState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     is ViewerState.Docx -> WordScreen(document = s.document)
+                    is ViewerState.Pptx -> SlideScreen(deck = s.deck)
                     is ViewerState.Web -> WebDocumentScreen(
                         uri = s.uri,
                         allowScripts = allowScripts,

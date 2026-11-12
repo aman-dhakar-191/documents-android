@@ -1,13 +1,14 @@
 package io.github.amandhakar.documents.document
 
 /**
- * File formats the app can open: PDF (pages shown as pictures, see [Document]), web pages and Word .docx files (each
- * shown by its own screen, not as pages). Add an entry here when another format is added.
+ * File formats the app can open: PDF (pages shown as pictures, see [Document]), web pages, Word .docx files and PowerPoint .pptx
+ * files (each shown by its own screen, not as pages). Add an entry here when another format is added.
  */
 enum class DocumentFormat {
     Pdf,
     Html,
-    Docx;
+    Docx,
+    Pptx;
 
     /** The MIME type to use when handing a file of this format to another app. */
     val mimeType: String
@@ -15,10 +16,12 @@ enum class DocumentFormat {
             Pdf -> "application/pdf"
             Html -> "text/html"
             Docx -> DOCX_MIME
+            Pptx -> PPTX_MIME
         }
 
     companion object {
         const val DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        const val PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
         /** Returns the format for a MIME type (parameters like "; charset=x" are ignored), or null if unsupported. */
         fun fromMimeType(mimeType: String?): DocumentFormat? {
@@ -27,6 +30,7 @@ enum class DocumentFormat {
                 "application/pdf" -> Pdf
                 "text/html", "application/xhtml+xml" -> Html
                 DOCX_MIME -> Docx
+                PPTX_MIME -> Pptx
                 else -> null
             }
         }
@@ -38,6 +42,7 @@ enum class DocumentFormat {
                 "pdf" -> Pdf
                 "html", "htm", "xhtml" -> Html
                 "docx" -> Docx
+                "pptx" -> Pptx
                 else -> null
             }
         }

@@ -17,7 +17,8 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromMimeType(""))
         assertNull(DocumentFormat.fromMimeType("application/octet-stream"))
         assertNull(DocumentFormat.fromMimeType("application/msword"))
-        assertNull(DocumentFormat.fromMimeType("application/vnd.openxmlformats-officedocument.presentationml.presentation"))
+        assertNull(DocumentFormat.fromMimeType("application/vnd.ms-powerpoint"))
+        assertNull(DocumentFormat.fromMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         assertNull(DocumentFormat.fromMimeType("application/pdfx"))
     }
 
@@ -32,7 +33,8 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromFileName(""))
         assertNull(DocumentFormat.fromFileName("pdf"))
         assertNull(DocumentFormat.fromFileName("notes.doc"))
-        assertNull(DocumentFormat.fromFileName("slides.pptx"))
+        assertNull(DocumentFormat.fromFileName("slides.ppt"))
+        assertNull(DocumentFormat.fromFileName("sheet.xlsx"))
         assertNull(DocumentFormat.fromFileName("report.pdf.exe"))
     }
 
@@ -70,5 +72,17 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromFileName("old.doc"))
         assertNull(DocumentFormat.fromFileName("template.dotx"))
         assertNull(DocumentFormat.fromFileName("macro.docm"))
+    }
+
+    @Test fun pptxMimeTypeAndFileName() {
+        assertEquals(DocumentFormat.Pptx, DocumentFormat.fromMimeType(DocumentFormat.PPTX_MIME))
+        assertEquals(DocumentFormat.PPTX_MIME, DocumentFormat.Pptx.mimeType)
+        assertEquals(DocumentFormat.Pptx, DocumentFormat.fromFileName("Deck.PPTX"))
+    }
+
+    @Test fun oldAndTemplateSlideFilesAreNotSupported() {
+        assertNull(DocumentFormat.fromFileName("old.ppt"))
+        assertNull(DocumentFormat.fromFileName("show.ppsx"))
+        assertNull(DocumentFormat.fromFileName("template.potx"))
     }
 }

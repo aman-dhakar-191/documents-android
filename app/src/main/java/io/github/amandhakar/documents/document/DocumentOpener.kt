@@ -16,9 +16,10 @@ object DocumentOpener {
         val format = formatOf(context, uri) ?: throw UnsupportedFormatException(context.contentResolver.getType(uri))
         return when (format) {
             DocumentFormat.Pdf -> openPdf(context, uri)
-            // Web pages and Word files aren't shown as pages: the screen asks for [formatOf] first and shows them itself.
+            // Web pages, Word files and presentations aren't shown as pages: the screen asks for [formatOf] first and shows them itself.
             DocumentFormat.Html -> throw UnsupportedFormatException("text/html")
             DocumentFormat.Docx -> throw UnsupportedFormatException(DocumentFormat.DOCX_MIME)
+            DocumentFormat.Pptx -> throw UnsupportedFormatException(DocumentFormat.PPTX_MIME)
         }
     }
 
