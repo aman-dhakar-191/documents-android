@@ -1,6 +1,10 @@
 package io.github.amandhakar.documents.ui
 
 import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -11,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,11 +48,15 @@ import io.github.amandhakar.documents.edit.Stroke
 
 /** A full-screen box to draw a signature with a finger. Done keeps it; the picture is cropped to the ink. */
 @Composable
-fun SignaturePadDialog(onDone: (Bitmap) -> Unit, onCancel: () -> Unit) {
+fun SignaturePadDialog(onDone: (Bitmap) -> Unit, onPickImage: (Uri, Boolean) -> Unit, onCancel: () -> Unit) {
     var strokes by remember { mutableStateOf(listOf<Stroke>()) }
     var current by remember { mutableStateOf(listOf<InkPoint>()) }
     val ink = Color(0xFF1A237E)
     val penPx = with(LocalDensity.current) { 6.dp.toPx() }
+    var removeWhite by remember { mutableStateOf(true) }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onPickImage(uri, removeWhite)
+    }
 
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
@@ -105,10 +115,20 @@ fun SignaturePadDialog(onDone: (Bitmap) -> Unit, onCancel: () -> Unit) {
                         }
                     }
                 }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    ) { Text("Use a photo instead") }
+                    Checkbox(checked = removeWhite, onCheckedChange = { removeWhite = it })
+                    Text("Remove white background", style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
                     "Your signature is saved on this phone only, so you can reuse it.",
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    modifier = Modifier.padding(16.dp),
                 )
             }
         }

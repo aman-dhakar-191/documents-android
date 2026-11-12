@@ -2,6 +2,7 @@ package io.github.amandhakar.documents
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,7 @@ import io.github.amandhakar.documents.edit.PdfSigner
 import io.github.amandhakar.documents.edit.PlacedSignature
 import io.github.amandhakar.documents.edit.Placement
 import io.github.amandhakar.documents.edit.SaveNames
+import io.github.amandhakar.documents.edit.SignatureImage
 import io.github.amandhakar.documents.edit.SignatureStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +38,12 @@ data class EditState(
 }
 
 class EditViewModel(app: Application) : AndroidViewModel(app) {
+    private companion object {
+        // A typical portrait phone screen, to put a new signature in the middle before the real size is known.
+        const val VIEWPORT_ASPECT = 0.5f
+        const val MAX_IMAGE_SIDE_PX = 1000
+    }
+
     private val store = SignatureStore(app)
     private val _state = MutableStateFlow(EditState())
     val state: StateFlow<EditState> = _state
@@ -50,22 +58,66 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     fun openPad() = _state.update { it.copy(padOpen = true) }
     fun closePad() = _state.update { it.copy(padOpen = false) }
 
-    /** Keeps a newly drawn signature (on disk too) and closes the pad. */
+    /**
+     * Keeps a new signature picture (drawn or from a photo; on disk too) and closes the pad. If nothing was
+     * being placed, it starts being placed now.
+     */
     fun signatureDrawn(bitmap: Bitmap) {
-        _state.update { it.copy(signature = bitmap, padOpen = false) }
+        _state.update { s ->
+            val aspect = bitmap.width.toFloat() / bitmap.height
+            val placing = s.placing?.let { Placement.fit(it, aspect, VIEWPORT_ASPECT) } ?: Placement.initial(0, aspect, VIEWPORT_ASPECT)
+            s.copy(signature = bitmap, padOpen = false, placing = placing)
+        }
         viewModelScope.launch(Dispatchers.IO) { store.save(bitmap) }
     }
 
-    /** Starts placing the signature on [page], in the middle of it. */
-    fun startPlacing(page: Int, pageAspect: Float) = _state.update { s ->
-        val signature = s.signature ?: return@update s
-        s.copy(placing = Placement.initial(page, signature.width.toFloat() / signature.height, pageAspect))
+    /** Uses the picture at [uri] as the signature, with a white background made see-through when [removeWhite]. */
+    fun signatureFromImage(uri: Uri, removeWhite: Boolean) {
+        viewModelScope.launch {
+            val bitmap = withContext(Dispatchers.IO) { runCatching { loadSignatureImage(uri, removeWhite) }.getOrNull() }
+            if (bitmap == null) {
+                _state.update { it.copy(message = "Couldn't use that image.") }
+            } else {
+                signatureDrawn(bitmap)
+            }
+        }
     }
 
+    private fun loadSignatureImage(uri: Uri, removeWhite: Boolean): Bitmap? {
+        val resolver = getApplication<Application>().contentResolver
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = SignatureImage.sampleSize(bounds.outWidth, bounds.outHeight, MAX_IMAGE_SIDE_PX)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) } ?: return null
+        if (!removeWhite) return decoded
+        val width = decoded.width
+        val height = decoded.height
+        val pixels = IntArray(width * height)
+        decoded.getPixels(pixels, 0, width, 0, 0, width, height)
+        val cleared = SignatureImage.whiteToTransparent(pixels)
+        val ink = SignatureImage.inkBounds(cleared, width, height) ?: return null
+        val box = SignatureImage.padded(ink, 6, width, height)
+        val out = Bitmap.createBitmap(box.width, box.height, Bitmap.Config.ARGB_8888)
+        out.setPixels(cleared, box.top * width + box.left, width, 0, 0, box.width, box.height)
+        return out
+    }
+
+    /** Starts positioning the signature, in the middle of the screen. */
+    fun startPlacing() = _state.update { s ->
+        val signature = s.signature ?: return@update s
+        s.copy(placing = Placement.initial(0, signature.width.toFloat() / signature.height, VIEWPORT_ASPECT))
+    }
+
+    /** The signature being positioned moved or resized (as fractions of the visible area). */
     fun updatePlacing(placed: PlacedSignature) = _state.update { s -> if (s.placing == null) s else s.copy(placing = placed) }
     fun cancelPlacing() = _state.update { it.copy(placing = null) }
 
-    fun confirmPlacing() = _state.update { s -> s.placing?.let { s.copy(placing = null, placed = s.placed + it) } ?: s }
+    /** The signature was dropped at [placed] on a page. */
+    fun placeAt(placed: PlacedSignature) = _state.update { it.copy(placing = null, placed = it.placed + placed) }
 
     fun undoLast() = _state.update { it.copy(placed = it.placed.dropLast(1)) }
 

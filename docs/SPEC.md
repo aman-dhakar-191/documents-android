@@ -41,7 +41,7 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    chose **PdfBox-Android** (`com.tom-roush:pdfbox-android`, Apache-2.0) over flattening pages into
    pictures. The signature is added on top of the real page, so text stays selectable and files stay
    small. Reading and rendering still use `PdfRenderer`. The signature is drawn with a finger, kept as
-   a picture in the app's private storage, and placed by dragging and resizing it on the page.
+   a picture in the app's private storage (or taken from a photo, optionally with the white background made see-through), and placed by dragging and resizing it while it floats above the pages: the pages scroll under it and it lands on the page it is over when the tick is pressed.
    Saving offers a new copy (the system "create file" screen, no permission) or replacing the
    original. Replacing writes the result to a temporary file and checks it opens with the same page
    count first, and puts the original back if the write fails. A file another app only let us read

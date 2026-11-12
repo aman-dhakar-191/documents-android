@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,9 +48,7 @@ import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
-import io.github.amandhakar.documents.edit.PageRow
 import io.github.amandhakar.documents.edit.SaveNames
-import io.github.amandhakar.documents.edit.VisiblePage
 import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.share.ShareFiles
 import kotlin.math.roundToInt
@@ -76,8 +73,6 @@ fun DocumentsApp(
     var zoom by rememberSaveable { mutableStateOf(1f) }
     // Lives here (not in the library screen) so the list keeps its scroll position after reading a PDF.
     val gridState = rememberLazyGridState()
-    // Shared with the page list so Sign can tell which page is showing.
-    val pageListState = rememberLazyListState()
     var askSaveChoice by rememberSaveable { mutableStateOf(false) }
     var askDiscard by rememberSaveable { mutableStateOf(false) }
 
@@ -137,14 +132,8 @@ fun DocumentsApp(
             editViewModel.messageShown()
         }
     }
-    // The page showing the most on screen: the one a new signature goes on.
-    fun visiblePage(): Int {
-        val info = pageListState.layoutInfo
-        val rows = info.visibleItemsInfo.map { PageRow(it.index, it.offset, it.size) }
-        return VisiblePage.mostVisible(rows, info.viewportEndOffset - info.viewportStartOffset) ?: 0
-    }
     val sign: () -> Unit = {
-        if (edit.signature == null) editViewModel.openPad() else editViewModel.startPlacing(visiblePage(), A4_ASPECT)
+        if (edit.signature == null) editViewModel.openPad() else editViewModel.startPlacing()
     }
     val signatureImage = remember(edit.signature) { edit.signature?.asImageBitmap() }
 
@@ -170,12 +159,8 @@ fun DocumentsApp(
     MaterialTheme {
         if (edit.padOpen) {
             SignaturePadDialog(
-                onDone = { bitmap ->
-                    val wasPlacing = edit.placing != null
-                    editViewModel.signatureDrawn(bitmap)
-                    // Drawing again while placing keeps the spot; a first signature goes straight onto the page.
-                    if (!wasPlacing) editViewModel.startPlacing(visiblePage(), A4_ASPECT)
-                },
+                onDone = { bitmap -> editViewModel.signatureDrawn(bitmap) },
+                onPickImage = { uri, removeWhite -> editViewModel.signatureFromImage(uri, removeWhite) },
                 onCancel = { editViewModel.closePad() },
             )
         }
@@ -247,17 +232,7 @@ fun DocumentsApp(
                         },
                         actions = {
                             if (state is ViewerState.Ready) {
-                                if (edit.placing != null) {
-                                    IconButton(onClick = { editViewModel.openPad() }) {
-                                        Icon(DocIcons.Edit, contentDescription = "Draw the signature again")
-                                    }
-                                    IconButton(onClick = { editViewModel.cancelPlacing() }) {
-                                        Icon(DocIcons.Close, contentDescription = "Cancel")
-                                    }
-                                    IconButton(onClick = { editViewModel.confirmPlacing() }) {
-                                        Icon(DocIcons.Check, contentDescription = "Place signature here")
-                                    }
-                                } else {
+                                if (edit.placing == null) {
                                     CompactButton("\u2212", enabled = zoom > Zoom.MIN) { zoom = Zoom.zoomOut(zoom) }
                                     Text("${(zoom * 100).roundToInt()}%")
                                     CompactButton("+", enabled = zoom < Zoom.MAX) { zoom = Zoom.zoomIn(zoom) }
@@ -316,7 +291,6 @@ fun DocumentsApp(
                             document = s.document,
                             zoom = zoom,
                             onZoomChange = { zoom = it },
-                            listState = pageListState,
                             editing = if (image != null && edit.signature != null) {
                                 EditingUi(
                                     signature = image,
@@ -324,6 +298,12 @@ fun DocumentsApp(
                                     placed = edit.placed,
                                     placing = edit.placing,
                                     onPlacingChange = { editViewModel.updatePlacing(it) },
+                                    onPlace = { editViewModel.placeAt(it) },
+                                    onMiss = {
+                                        Toast.makeText(context, "Move the signature over a page first.", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onCancel = { editViewModel.cancelPlacing() },
+                                    onRedraw = { editViewModel.openPad() },
                                 )
                             } else {
                                 null
@@ -372,5 +352,3 @@ private fun displayNameOf(context: android.content.Context, uri: Uri?): String? 
     }
 }
 
-/** Width / height of a typical portrait page, used to place a new signature before the page's real shape is needed. */
-private const val A4_ASPECT = 1f / 1.414f
