@@ -169,7 +169,7 @@ fun DocumentsApp(
 
     val shareChosen: () -> Unit = {
         val files = MultiSelect.chosen((libraryState as? LibraryState.Ready)?.files.orEmpty(), selectedIds)
-        if (ShareFiles.sharePdfs(context, files.map { it.uri })) {
+        if (ShareFiles.shareFiles(context, files.map { it.uri }, ShareFiles.commonMimeType(files.map { it.format.mimeType }))) {
             libraryViewModel.clearSelection()
         } else {
             Toast.makeText(context, "These files can't be shared.", Toast.LENGTH_SHORT).show()

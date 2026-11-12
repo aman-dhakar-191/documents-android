@@ -80,7 +80,7 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     blocked"). Tapping a web, mail or phone link asks first and then opens it outside the app; every other link kind is
     blocked. Pages over 8 MB aren't opened. The owner confirmed this approach (remote parts blocked) in place of asking for
     the internet permission. Intent filters only match local `content:` / `file:` addresses, so the app does not take
-    over links to websites. Not yet: library cards for web pages, save as PDF, find in page, share.
+    over links to websites. The library lists web pages too, under chips (All, PDF, Web pages, each with a count; more chips are added with each new format). Web page cards show a globe instead of a first-page preview. Not yet: save as PDF, find in page, share from the viewer.
 
 ## Phases
 | Phase | Scope | Status |

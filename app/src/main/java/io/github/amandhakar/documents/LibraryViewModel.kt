@@ -3,6 +3,8 @@ package io.github.amandhakar.documents
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.amandhakar.documents.library.LibraryFilter
+import io.github.amandhakar.documents.library.LibraryFilters
 import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.library.PdfFile
 import io.github.amandhakar.documents.library.PdfLibrary
@@ -31,7 +33,16 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val _selected = MutableStateFlow<Set<Long>>(emptySet())
     val selected: StateFlow<Set<Long>> = _selected
 
+    // Which kind of file the chips above the list are showing.
+    private val _filter = MutableStateFlow(LibraryFilter.All)
+    val filter: StateFlow<LibraryFilter> = _filter
+
     private var job: Job? = null
+
+    fun setFilter(filter: LibraryFilter) {
+        _filter.value = filter
+        _selected.value = emptySet() // what was ticked may no longer be on screen
+    }
 
     fun toggleSelected(id: Long) {
         _selected.update { MultiSelect.toggle(it, id) }
@@ -42,7 +53,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun selectAll() {
-        (_state.value as? LibraryState.Ready)?.let { _selected.value = MultiSelect.all(it.files) }
+        (_state.value as? LibraryState.Ready)?.let { _selected.value = MultiSelect.all(LibraryFilters.apply(it.files, _filter.value)) }
     }
 
     /** Re-checks permission and re-reads the list. The old list stays on screen while it loads. */
@@ -62,7 +73,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                LibraryState.Failed("Couldn't read the list of PDF files.")
+                LibraryState.Failed("Couldn't read the list of files.")
             }
         }
     }

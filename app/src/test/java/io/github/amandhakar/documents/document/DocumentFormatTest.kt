@@ -41,6 +41,11 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromMimeType("text/plain"))
     }
 
+    @Test fun mimeTypesToHandToOtherApps() {
+        assertEquals("application/pdf", DocumentFormat.Pdf.mimeType)
+        assertEquals("text/html", DocumentFormat.Html.mimeType)
+    }
+
     @Test fun webPageFileNames() {
         assertEquals(DocumentFormat.Html, DocumentFormat.fromFileName("index.html"))
         assertEquals(DocumentFormat.Html, DocumentFormat.fromFileName("PAGE.HTM"))

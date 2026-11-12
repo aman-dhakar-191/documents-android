@@ -8,6 +8,13 @@ enum class DocumentFormat {
     Pdf,
     Html;
 
+    /** The MIME type to use when handing a file of this format to another app. */
+    val mimeType: String
+        get() = when (this) {
+            Pdf -> "application/pdf"
+            Html -> "text/html"
+        }
+
     companion object {
         /** Returns the format for a MIME type (parameters like "; charset=x" are ignored), or null if unsupported. */
         fun fromMimeType(mimeType: String?): DocumentFormat? {
