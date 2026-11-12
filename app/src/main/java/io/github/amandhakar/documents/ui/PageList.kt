@@ -72,6 +72,11 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.document.Document
+import io.github.amandhakar.documents.edit.ColorSample
+import io.github.amandhakar.documents.edit.LineHit
+import io.github.amandhakar.documents.edit.PageLines
+import io.github.amandhakar.documents.edit.TextEdit
+import io.github.amandhakar.documents.edit.TextLine
 import io.github.amandhakar.documents.edit.PageHit
 import io.github.amandhakar.documents.edit.PageRow
 import io.github.amandhakar.documents.edit.PlacedSignature
@@ -275,6 +280,24 @@ private fun PageImage(
                 elevation = 4.dp,
             )
             .then(
+                if (editing != null && editing.textMode) {
+                    Modifier.pointerInput(editing.lines[index], pageSize, loaded) {
+                        val found = editing.lines[index]
+                        if (found != null && found.supported && found.widthPt > 0f) {
+                            detectTapGestures { tap ->
+                                val x = tap.x / pageSize.width * found.widthPt
+                                val y = tap.y / pageSize.height * found.heightPt
+                                LineHit.find(found.lines, x, y)?.let { line ->
+                                    editing.onLineTapped(index, line, coverColorAround(loaded, found, line))
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .then(
                 if (document.supportsTextSelection) {
                     Modifier.pointerInput(document, index) {
                         var anchor = Offset.Zero
@@ -311,7 +334,17 @@ private fun PageImage(
             modifier = Modifier.fillMaxWidth(),
             contentScale = ContentScale.FillWidth,
         )
+        if (editing != null && editing.textMode) {
+            LaunchedEffect(index) { editing.onNeedLines(index) }
+        }
         if (editing != null && pageSize.width > 0 && pageSize.height > 0) {
+            for (change in editing.textEdits) {
+                if (change.page == index) TextChangeOnPage(change, pageSize)
+            }
+            val found = editing.lines[index]
+            if (editing.textMode && found != null && found.supported && found.widthPt > 0f) {
+                LineOutlines(found, pageSize)
+            }
             val pageAspect = pageSize.width.toFloat() / pageSize.height
             for (placed in editing.placed) {
                 if (placed.page == index) SignatureOnPage(editing, placed, pageSize, pageAspect)
@@ -548,6 +581,16 @@ class EditingUi(
     val onMiss: () -> Unit,
     val onCancel: () -> Unit,
     val onRedraw: () -> Unit,
+    /** True while tapping lines of text to change them. */
+    val textMode: Boolean = false,
+    /** The text lines found so far, by page. */
+    val lines: Map<Int, PageLines> = emptyMap(),
+    /** Text changes not saved yet. */
+    val textEdits: List<TextEdit> = emptyList(),
+    /** Asks for the lines of a page to be found (called once a page is showing in text mode). */
+    val onNeedLines: (Int) -> Unit = {},
+    /** A line was tapped: page, the line, and the background colour around it. */
+    val onLineTapped: (Int, TextLine, Int) -> Unit = { _, _, _ -> },
 )
 
 private val SignatureFrame = Color(0xFF3390FF)
@@ -644,4 +687,63 @@ private fun BoxScope.FloatingSignature(
             IconButton(onClick = onConfirm) { Icon(DocIcons.Check, contentDescription = "Place signature here") }
         }
     }
+}
+
+/** Light boxes around the lines of text, so it is clear what can be tapped. */
+@Composable
+private fun BoxScope.LineOutlines(found: PageLines, pageSize: IntSize) {
+    Canvas(Modifier.matchParentSize()) {
+        val sx = size.width / found.widthPt
+        val sy = size.height / found.heightPt
+        for (line in found.lines) {
+            drawRect(
+                color = SignatureFrame.copy(alpha = 0.7f),
+                topLeft = Offset(line.left * sx, line.top * sy),
+                size = Size((line.right - line.left) * sx, (line.bottom - line.top) * sy),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
+            )
+        }
+    }
+}
+
+/** A text change drawn as it will be saved: the covering box and the new text (the font is only close). */
+@Composable
+private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
+    val density = LocalDensity.current
+    val scale = pageSize.width / change.pageWidthPt
+    Box(
+        Modifier
+            .offset { IntOffset((change.left * pageSize.width).roundToInt(), (change.top * pageSize.height).roundToInt()) }
+            .size(
+                with(density) { (change.width * pageSize.width).toDp() },
+                with(density) { (change.height * pageSize.height).toDp() },
+            )
+            .background(Color(change.cover)),
+    )
+    if (change.text.isNotEmpty()) {
+        androidx.compose.material3.Text(
+            change.text,
+            color = Color.Black,
+            fontSize = with(density) { (change.fontSizePt * scale).toSp() },
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.offset {
+                IntOffset(
+                    (change.left * pageSize.width).roundToInt(),
+                    (change.top * pageSize.height).roundToInt(),
+                )
+            },
+        )
+    }
+}
+
+/** The background colour around a line: the average of four pixels just outside its corners. */
+private fun coverColorAround(page: Bitmap, found: PageLines, line: TextLine): Int {
+    val sx = page.width / found.widthPt
+    val sy = page.height / found.heightPt
+    val margin = 2
+    val xs = listOf((line.left * sx).toInt() - margin, (line.right * sx).toInt() + margin)
+    val ys = listOf((line.top * sy).toInt() - margin, (line.bottom * sy).toInt() + margin)
+    val samples = xs.flatMap { x -> ys.map { y -> page.getPixel(x.coerceIn(0, page.width - 1), y.coerceIn(0, page.height - 1)) } }
+    return ColorSample.average(samples)
 }

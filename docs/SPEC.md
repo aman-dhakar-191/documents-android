@@ -48,13 +48,23 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    can't be replaced: the app then says so and offers a new copy. No new permission was added.
    Known limits: password-protected PDFs can't be edited; a signature is a picture, not a digital
    (cryptographic) signature.
+10. **Changing text (cover and retype).** Editing the existing words of a PDF in place is not reliably possible
+    (a page stores glyphs at coordinates, usually in trimmed fonts, with no paragraphs). The owner asked for an
+    editing layer of our own on top of PdfBox-Android, built in stages. Stage 1: PdfBox finds the lines of text
+    on a page (words with positions, joined into lines); in "Change text" mode the person taps a line, types the
+    new text, and Save covers the old line with a box in the page's background colour (sampled from the rendered
+    page) and writes the new text over it in Helvetica, shrunk down to 60% to fit. **The old text is covered, not
+    erased: it is still in the file** (searchable, copyable), so this must not be used to hide sensitive
+    information. Limits: Latin letters, digits and common symbols only (no Hindi or emoji yet); text colour is
+    always black and the font is not matched; rotated pages and scans (no text) are not supported. Next stages
+    (not started): really removing the old text from the page content, matching the font, adding new text boxes.
 
 ## Phases
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | View PDFs: library of all PDFs as cards with previews, picker (Browse), open-with, scroll, button and pinch zoom, error states, CI, signed releases | In progress (v0.1.0 released; library and pinch zoom not yet device-tested) |
 | 2 | Better viewing: text selection on Android 15+ (built in, no library), then remember last page, password-protected PDFs, text search (search is in the same Android 15 API; older phones would need a third-party library: check licence, e.g. MuPDF is AGPL) | Text selection implemented, not device-tested; rest not started |
-| 3 | PDF annotation / editing: signature first (draw, place, save as new or replace), via PdfBox-Android | Signature implemented, not device-tested; other annotations not started |
+| 3 | PDF annotation / editing: signature first (draw, place, save as new or replace), via PdfBox-Android | Signature implemented and working on the owner's phone; text change (cover and retype) implemented, not device-tested; removing old text, new text boxes and other annotations not started |
 | 4 | Word (.docx) viewing, then editing (large; Apache POI is heavy on Android, faithful layout is hard) | Not started, needs an explicit go-ahead |
 
 "Docs" is assumed to mean Word-style `.doc` / `.docx`. Google Docs would be a separate

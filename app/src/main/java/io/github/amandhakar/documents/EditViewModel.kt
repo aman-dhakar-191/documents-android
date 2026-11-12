@@ -6,7 +6,12 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.amandhakar.documents.edit.PageLines
 import io.github.amandhakar.documents.edit.PdfSigner
+import io.github.amandhakar.documents.edit.PdfText
+import io.github.amandhakar.documents.edit.PdfTextLines
+import io.github.amandhakar.documents.edit.TextEdit
+import io.github.amandhakar.documents.edit.TextLine
 import io.github.amandhakar.documents.edit.PlacedSignature
 import io.github.amandhakar.documents.edit.Placement
 import io.github.amandhakar.documents.edit.SaveNames
@@ -33,9 +38,22 @@ data class EditState(
     val saving: Boolean = false,
     /** A one-off note for the person (saved, or what went wrong). Cleared with [EditViewModel.messageShown]. */
     val message: String? = null,
+    /** True while the person is tapping lines of text to change them. */
+    val textMode: Boolean = false,
+    /** The text lines found so far, by page (0-based). */
+    val lines: Map<Int, PageLines> = emptyMap(),
+    /** Text changes not saved yet. */
+    val textEdits: List<TextEdit> = emptyList(),
+    /** The line being changed right now (its dialog is open). */
+    val editingLine: LineEdit? = null,
 ) {
-    val hasEdits: Boolean get() = placed.isNotEmpty() || placing != null
+    /** Changes that would be written by Save. */
+    val hasPending: Boolean get() = placed.isNotEmpty() || textEdits.isNotEmpty()
+    val hasEdits: Boolean get() = hasPending || placing != null || editingLine != null
 }
+
+/** A line of text the person tapped: what to show in the box, and the colour that will cover the old text. */
+data class LineEdit(val page: Int, val pageLines: PageLines, val line: TextLine, val cover: Int, val initialText: String)
 
 class EditViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
@@ -120,9 +138,101 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     fun placeAt(placed: PlacedSignature) = _state.update { it.copy(placing = null, placed = it.placed + placed) }
 
     fun undoLast() = _state.update { it.copy(placed = it.placed.dropLast(1)) }
+    fun undoLastText() = _state.update { it.copy(textEdits = it.textEdits.dropLast(1)) }
+
+    fun enterTextMode() = _state.update { it.copy(textMode = true, placing = null) }
+    fun exitTextMode() = _state.update { it.copy(textMode = false, editingLine = null) }
+
+    // A private copy of the open PDF that PdfBox reads the text from (PdfBox needs a file).
+    private var workingFile: File? = null
+    private var workingSource: Uri? = null
+    private val loadingPages = mutableSetOf<Int>()
+
+    @Synchronized
+    private fun workingCopy(source: Uri): File {
+        val existing = workingFile
+        if (existing != null && workingSource == source && existing.exists()) return existing
+        existing?.delete()
+        val context = getApplication<Application>()
+        val file = File.createTempFile("working", ".pdf", context.cacheDir)
+        try {
+            (context.contentResolver.openInputStream(source) ?: throw IOException("Could not read $source")).use { stream ->
+                file.outputStream().use { stream.copyTo(it) }
+            }
+        } catch (e: Throwable) {
+            file.delete()
+            throw e
+        }
+        workingFile = file
+        workingSource = source
+        return file
+    }
+
+    @Synchronized
+    private fun dropWorkingCopy() {
+        workingFile?.delete()
+        workingFile = null
+        workingSource = null
+    }
+
+    /** Finds the text lines on [page] of the PDF at [source] (once; the result is kept). */
+    fun requestLines(page: Int, source: Uri) {
+        if (page in _state.value.lines || !loadingPages.add(page)) return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { PdfTextLines.read(getApplication(), workingCopy(source), page) }
+            }
+            loadingPages.remove(page)
+            _state.update { s ->
+                result.fold(
+                    onSuccess = { found ->
+                        s.copy(
+                            lines = s.lines + (page to found),
+                            message = if (found.supported) s.message else "Text on rotated pages can't be changed yet.",
+                        )
+                    },
+                    onFailure = {
+                        s.copy(
+                            lines = s.lines + (page to PageLines(0f, 0f, emptyList())),
+                            message = "Couldn't read the text on page ${page + 1}.",
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    /** The person tapped [line] on [page]; [cover] is the background colour found around it. */
+    fun lineTapped(page: Int, line: TextLine, cover: Int) = _state.update { s ->
+        val pageLines = s.lines[page] ?: return@update s
+        val existing = s.textEdits.firstOrNull { it.sameLineAs(TextEdit.forLine(page, pageLines, line, "", cover)) }
+        s.copy(editingLine = LineEdit(page, pageLines, line, existing?.cover ?: cover, existing?.text ?: line.text))
+    }
+
+    fun cancelLineEdit() = _state.update { it.copy(editingLine = null) }
+
+    /** Keeps [text] as the replacement for the line being changed. Changing a line back to what it was removes the change. */
+    fun applyLineEdit(text: String) = _state.update { s ->
+        val target = s.editingLine ?: return@update s
+        val cleaned = PdfText.clean(text)
+        if (PdfText.unsupported(cleaned).isNotEmpty()) return@update s
+        val edit = TextEdit.forLine(target.page, target.pageLines, target.line, cleaned, target.cover)
+        val others = s.textEdits.filterNot { it.sameLineAs(edit) }
+        val unchanged = cleaned == target.line.text
+        s.copy(editingLine = null, textEdits = if (unchanged) others else others + edit)
+    }
 
     /** Forgets everything not saved (another document was opened, or the person chose to discard). */
-    fun clearEdits() = _state.update { it.copy(placing = null, placed = emptyList(), padOpen = false) }
+    fun clearEdits() {
+        dropWorkingCopy()
+        loadingPages.clear()
+        _state.update {
+            it.copy(
+                placing = null, placed = emptyList(), padOpen = false,
+                textMode = false, lines = emptyMap(), textEdits = emptyList(), editingLine = null,
+            )
+        }
+    }
 
     fun messageShown() = _state.update { it.copy(message = null) }
 
@@ -134,7 +244,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     fun save(source: Uri, destination: Uri?, onFinished: (Boolean) -> Unit) {
         val snapshot = _state.value
         val signature = snapshot.signature
-        if (signature == null || snapshot.placed.isEmpty() || snapshot.saving) {
+        if (!snapshot.hasPending || snapshot.saving || (snapshot.placed.isNotEmpty() && signature == null)) {
             onFinished(false)
             return
         }
@@ -142,7 +252,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
-                    write(source, destination, signature, snapshot.placed)
+                    write(source, destination, signature, snapshot.placed, snapshot.textEdits)
                     null
                 } catch (e: Throwable) {
                     e
@@ -150,16 +260,20 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
             }
             _state.update {
                 if (result == null) {
-                    it.copy(saving = false, placed = emptyList(), placing = null, message = "Saved")
+                    it.copy(
+                        saving = false, placed = emptyList(), placing = null, textEdits = emptyList(),
+                        lines = emptyMap(), textMode = false, message = "Saved",
+                    )
                 } else {
                     it.copy(saving = false, message = SaveNames.errorMessage(result, replacing = destination == null))
                 }
             }
+            if (result == null) dropWorkingCopy() // the file changed: text positions must be read again
             onFinished(result == null)
         }
     }
 
-    private fun write(source: Uri, destination: Uri?, signature: Bitmap, placements: List<PlacedSignature>) {
+    private fun write(source: Uri, destination: Uri?, signature: Bitmap?, placements: List<PlacedSignature>, textEdits: List<TextEdit>) {
         val context = getApplication<Application>()
         val resolver = context.contentResolver
         val input = File.createTempFile("source", ".pdf", context.cacheDir)
@@ -169,7 +283,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                 input.outputStream().use { stream.copyTo(it) }
             }
             val pages = PdfSigner.pageCount(context, input) ?: throw IOException("Could not read the PDF")
-            PdfSigner.sign(context, input, signature, placements, output)
+            PdfSigner.edit(context, input, signature, placements, textEdits, output)
             // Never touch the target with something that doesn't open as the same PDF.
             if (!PdfSigner.looksValid(context, output, expectedPages = pages)) {
                 throw IOException("The signed PDF did not pass its check")
