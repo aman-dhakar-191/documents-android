@@ -4,7 +4,11 @@
 
     <!-- Only to list the PDFs on the phone for the library screen (see docs/SPEC.md, decision 4).
          Opening one PDF from the picker or another app's "open with" needs no permission.
-         The app has no INTERNET permission. -->
+         -->
+    <!-- Only for saved web pages, and only after the person taps "Load online parts" on that page. The app itself
+         never uploads or downloads anything; documents, signatures and the library never use the network.
+         Plain http is refused (usesCleartextTraffic below), and the viewer only lets https through. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
@@ -26,6 +30,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Documents">
 
         <activity

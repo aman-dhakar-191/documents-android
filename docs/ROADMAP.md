@@ -6,7 +6,7 @@ tagged **[Certain]**, **[Likely]** or **[Guessing]**.
 ## What stays the same
 
 - No third-party library unless there is a reason and a licence check; each one is asked about first.
-- No new permission without a new decision in SPEC. In particular **no INTERNET permission**: nothing is uploaded and
+- No new permission without a new decision in SPEC. In particular the only network use is the per-page "Load online parts" switch on web pages (decided by the owner, off by default): nothing is uploaded and
   nothing is fetched. [Certain] This also means web pages can't load their remote images, styles or scripts.
 - The `Document` interface (page count, render a page to a bitmap, optional text selection) and `DocumentFormat` /
   `DocumentOpener` routing by MIME type stay the way new formats plug in. [Certain] PDF, PowerPoint and Word (laid
@@ -23,7 +23,7 @@ Reason: effort and risk go up in that order, and the first one reuses what Andro
 
 ## Phase 4: Web pages (.html, .htm)
 
-**Status: stages 1 and 2 implemented (owner confirmed the order and "remote parts blocked"; library chips and cards added at the owner's request); stages 3 and 4 not started.**
+**Status: stages 1 to 3 implemented (owner confirmed the order; library chips and cards added at the owner's request; per-page online parts added at the owner's request); stage 4: find in page and share done, `.mhtml` and text selection not started.**
 
 **Goal:** open an HTML file from the file manager, a chat app or the library and read it, then optionally save it as a
 PDF (which the PDF tools can then sign and mark up).
@@ -32,7 +32,7 @@ PDF (which the PDF tools can then sign and mark up).
 
 **Decisions to make (defaults in bold):**
 1. Scripts: **off by default**, with an "Allow scripts" switch per file. A local HTML file is untrusted content.
-2. Remote content: **blocked** (no INTERNET permission). Pages that depend on external CSS, images or scripts will look
+2. Remote content: **blocked by default; the owner added a per-page "Load online parts" switch** (INTERNET permission, https only). Pages that depend on external CSS, images or scripts will look
    incomplete. [Certain] Say so on screen when something was blocked.
 3. Links: tapping a link to another site asks first and then opens the phone's browser; links to other local files are
    not followed.

@@ -53,6 +53,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.edit.ReaderChrome
+import io.github.amandhakar.documents.web.FindText
+import io.github.amandhakar.documents.web.WebController
 import io.github.amandhakar.documents.web.WebNotice
 import io.github.amandhakar.documents.edit.ReaderTool
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -69,6 +71,8 @@ import io.github.amandhakar.documents.edit.TextBoxMath
 import io.github.amandhakar.documents.edit.SaveNames
 import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.web.WebDocumentScreen
+import io.github.amandhakar.documents.document.DocumentFormat
+import io.github.amandhakar.documents.library.PdfFiles
 import io.github.amandhakar.documents.share.ShareFiles
 import kotlin.math.roundToInt
 
@@ -99,6 +103,12 @@ fun DocumentsApp(
     var askNewText by rememberSaveable { mutableStateOf(false) }
     // Scripts in a web page are off until the person turns them on (per opening).
     var allowScripts by rememberSaveable { mutableStateOf(false) }
+    // Online parts of a web page (pictures, styles) load only after the person allows it, per opening.
+    var allowOnline by rememberSaveable { mutableStateOf(false) }
+    // The find-in-page bar on a web page, and what was typed in it.
+    var findOpen by rememberSaveable { mutableStateOf(false) }
+    var findQuery by rememberSaveable { mutableStateOf("") }
+    val webController = remember { WebController() }
     // Save also removes the old text under Change text edits (experimental), instead of only covering it.
     var eraseOld by rememberSaveable { mutableStateOf(false) }
 
@@ -108,6 +118,9 @@ fun DocumentsApp(
     fun openOurselves(uri: Uri) {
         openedFromOutside = false
         allowScripts = false
+        allowOnline = false
+        findOpen = false
+        findQuery = ""
         editViewModel.clearEdits()
         viewModel.open(uri)
     }
@@ -121,6 +134,9 @@ fun DocumentsApp(
             libraryViewModel.clearSelection()
             editViewModel.clearEdits()
             allowScripts = false
+            allowOnline = false
+            findOpen = false
+            findQuery = ""
             viewModel.open(incoming.uri)
         }
     }
@@ -178,6 +194,13 @@ fun DocumentsApp(
         libraryViewModel.setQuery("")
     }
     BackHandler(enabled = inLibrary && searching && !selectionActive, onBack = closeSearch)
+    // Back while finding in a web page closes the find bar first.
+    val closeFind: () -> Unit = {
+        findOpen = false
+        findQuery = ""
+        webController.clearFind()
+    }
+    BackHandler(enabled = !inLibrary && findOpen && state is ViewerState.Web, onBack = closeFind)
 
     val shareChosen: () -> Unit = {
         val files = MultiSelect.chosen((libraryState as? LibraryState.Ready)?.files.orEmpty(), selectedIds)
@@ -315,6 +338,18 @@ fun DocumentsApp(
                         onCloseSearch = closeSearch,
                         onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml")) },
                     )
+                } else if (state is ViewerState.Web && findOpen) {
+                    WebFindBar(
+                        query = findQuery,
+                        label = FindText.label(findQuery, webController.findActive, webController.findTotal),
+                        canStep = findQuery.isNotBlank() && webController.findTotal > 0,
+                        onQuery = {
+                            findQuery = it
+                            webController.find(it)
+                        },
+                        onNext = { webController.findNext(it) },
+                        onClose = closeFind,
+                    )
                 } else if (state is ViewerState.Web) {
                     TopAppBar(
                         expandedHeight = 48.dp,
@@ -325,17 +360,46 @@ fun DocumentsApp(
                         actions = {
                             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                                 Text(
-                                    WebNotice.scriptsChip(allowScripts),
+                                    WebNotice.modeChip(allowScripts, allowOnline),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 )
                             }
+                            IconButton(onClick = { findOpen = true }) { Icon(DocIcons.Search, contentDescription = "Find in page") }
                             var menuOpen by remember { mutableStateOf(false) }
                             IconButton(onClick = { menuOpen = true }) {
                                 Icon(DocIcons.MoreVert, contentDescription = "More options")
                             }
+                            val webUri = (state as? ViewerState.Web)?.uri
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Save as PDF") },
+                                    onClick = {
+                                        menuOpen = false
+                                        val name = displayNameOf(context, webUri)?.let { PdfFiles.title(it) } ?: "Web page"
+                                        if (!webController.printToPdf(context, name)) {
+                                            Toast.makeText(context, "The page isn't ready to save yet.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Share") },
+                                    leadingIcon = { Icon(DocIcons.Share, contentDescription = null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        val shared = webUri != null &&
+                                            ShareFiles.shareFiles(context, listOf(webUri), DocumentFormat.Html.mimeType)
+                                        if (!shared) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (allowOnline) "Stop loading online parts" else "Load online parts") },
+                                    onClick = {
+                                        menuOpen = false
+                                        allowOnline = !allowOnline
+                                    },
+                                )
                                 DropdownMenuItem(
                                     text = { Text(if (allowScripts) "Turn scripts off" else "Allow scripts on this page") },
                                     onClick = {
@@ -436,7 +500,13 @@ fun DocumentsApp(
                         onOpen = { openOurselves(it) },
                     )
                     ViewerState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    is ViewerState.Web -> WebDocumentScreen(uri = s.uri, allowScripts = allowScripts)
+                    is ViewerState.Web -> WebDocumentScreen(
+                        uri = s.uri,
+                        allowScripts = allowScripts,
+                        allowOnline = allowOnline,
+                        onAllowOnline = { allowOnline = true },
+                        controller = webController,
+                    )
                     is ViewerState.Error -> Message(s.message) {
                         Button(onClick = toLibrary) { Text("Back to my PDFs") }
                     }
