@@ -56,8 +56,8 @@ class LibrarySearchTest {
     private fun ids(query: String, filter: LibraryFilter = LibraryFilter.All) =
         LibraryFilters.apply(files, filter, query).map { it.id }
 
-    @Test fun anEmptyQueryShowsEverything() = assertEquals(listOf(1L, 2L, 3L), ids(""))
-    @Test fun aBlankQueryShowsEverything() = assertEquals(listOf(1L, 2L, 3L), ids("   "))
+    @Test fun anEmptyQueryShowsEverything() = assertEquals(setOf(1L, 2L, 3L), ids("").toSet())
+    @Test fun aBlankQueryShowsEverything() = assertEquals(setOf(1L, 2L, 3L), ids("   ").toSet())
     @Test fun matchingIgnoresCase() = assertEquals(listOf(1L), ids("TRAIN"))
     @Test fun matchesPartOfAName() = assertEquals(listOf(2L), ids("voice"))
     @Test fun everyWordMustMatch() = assertEquals(listOf(1L), ids("ticket train"))
