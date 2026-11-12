@@ -55,7 +55,7 @@ PDF (which the PDF tools can then sign and mark up).
 
 ## Phase 5: PowerPoint (.pptx)
 
-**Status: stage 1 (open and read: slides drawn to scale) implemented with the app's own zip + XML code and no library, and a labelled grey box for charts, SmartArt and objects (stage 2). Stages 3 to 6 not started.**
+**Status: stage 1 (open and read: slides drawn to scale) implemented with the app's own zip + XML code and no library, and a labelled grey box for charts, SmartArt and objects (stage 2). Stage 6 (export as PDF) implemented at the owner's request; stages 3 to 5 not started.**
 
 **Reality check:** [Certain] `.pptx` is a zip of XML files (OOXML). Android can unzip (`java.util.zip`) and parse XML
 (`XmlPullParser`) with no library. Old `.ppt` (binary) is a different format and is **not** planned.
@@ -85,7 +85,7 @@ differ), and big pictures (memory). [Certain]
 
 ## Phase 6: Word (.docx)
 
-**Status: stage 1 implemented, using the app's own zip + XML code and no library (owner asked for Word; own code is the assumed choice until told otherwise): a reading view (A) and, at the owner's request, an approximate paginated page view (B, A4 by default). Stages 2 to 5 not started.**
+**Status: stage 1 implemented, using the app's own zip + XML code and no library (owner asked for Word; own code is the assumed choice until told otherwise): a reading view (A) and, at the owner's request, an approximate paginated page view (B, A4 by default). Stage 4 (export to PDF) implemented at the owner's request (with a real-measured page fill, so its breaks differ slightly from the on-screen estimate); stages 2, 3 and 5 not started.**
 
 **Reality check:** [Certain] `.docx` is also OOXML (zip plus XML). Unlike a PDF, a Word file stores real paragraphs and
 runs, so **editing text is far easier than in PDF**. What is hard is **page-faithful layout**: pagination, floating

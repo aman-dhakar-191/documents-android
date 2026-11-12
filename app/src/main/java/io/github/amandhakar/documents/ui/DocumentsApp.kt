@@ -44,6 +44,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -53,6 +57,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.edit.ReaderChrome
+import io.github.amandhakar.documents.export.ExportNames
+import io.github.amandhakar.documents.export.SlidesPdfExporter
+import io.github.amandhakar.documents.export.WordPdfExporter
 import io.github.amandhakar.documents.web.FindText
 import io.github.amandhakar.documents.slides.SlideScreen
 import io.github.amandhakar.documents.word.WordPagesScreen
@@ -177,6 +184,39 @@ fun DocumentsApp(
         val source = viewModel.openUri()
         if (target != null && source != null) {
             editViewModel.save(source, target, eraseOld) { saved -> if (saved) openOurselves(target) }
+        }
+    }
+    // Save a Word file or presentation as a PDF: the person picks where, then it is written off the main thread.
+    var exporting by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val exportPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { target ->
+        val current = state
+        if (target != null && !exporting && (current is ViewerState.Docx || current is ViewerState.Pptx)) {
+            exporting = true
+            scope.launch {
+                val failure = withContext(Dispatchers.IO) {
+                    try {
+                        val stream = context.contentResolver.openOutputStream(target, "w") ?: throw java.io.IOException("Could not write")
+                        stream.use { out ->
+                            when (current) {
+                                is ViewerState.Docx -> WordPdfExporter.export(current.document, out)
+                                is ViewerState.Pptx -> SlidesPdfExporter.export(current.deck, out)
+                                else -> Unit
+                            }
+                        }
+                        null
+                    } catch (e: Throwable) {
+                        e
+                    }
+                }
+                exporting = false
+                if (failure == null) {
+                    Toast.makeText(context, "Saved as PDF", Toast.LENGTH_SHORT).show()
+                    openOurselves(target)
+                } else {
+                    Toast.makeText(context, ExportNames.errorMessage(failure), Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
     LaunchedEffect(edit.message) {
@@ -381,12 +421,27 @@ fun DocumentsApp(
                             }
                             val officeUri = (state as? ViewerState.Docx)?.uri ?: (state as? ViewerState.Pptx)?.uri
                             val officeMime = if (state is ViewerState.Pptx) DocumentFormat.PPTX_MIME else DocumentFormat.DOCX_MIME
-                            IconButton(
-                                onClick = {
-                                    val shared = officeUri != null && ShareFiles.shareFiles(context, listOf(officeUri), officeMime)
-                                    if (!shared) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
-                                },
-                            ) { Icon(DocIcons.Share, contentDescription = "Share") }
+                            var officeMenu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { officeMenu = true }) { Icon(DocIcons.MoreVert, contentDescription = "More options") }
+                            DropdownMenu(expanded = officeMenu, onDismissRequest = { officeMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Save as PDF") },
+                                    enabled = !exporting,
+                                    onClick = {
+                                        officeMenu = false
+                                        exportPdf.launch(ExportNames.pdfName(displayNameOf(context, officeUri)))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Share") },
+                                    leadingIcon = { Icon(DocIcons.Share, contentDescription = null) },
+                                    onClick = {
+                                        officeMenu = false
+                                        val shared = officeUri != null && ShareFiles.shareFiles(context, listOf(officeUri), officeMime)
+                                        if (!shared) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
+                                    },
+                                )
+                            }
                         },
                     )
                 } else if (state is ViewerState.Web) {
@@ -652,6 +707,7 @@ fun DocumentsApp(
                         if (edit.saving) CircularProgressIndicator(Modifier.align(Alignment.Center))
                     }
                 }
+                if (exporting) CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
         }
     }
