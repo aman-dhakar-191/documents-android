@@ -7,7 +7,11 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.amandhakar.documents.edit.PageLines
+import io.github.amandhakar.documents.edit.MarkPoint
+import io.github.amandhakar.documents.edit.Marks
+import io.github.amandhakar.documents.edit.PageMark
 import io.github.amandhakar.documents.edit.PdfSigner
+import io.github.amandhakar.documents.edit.PenStroke
 import io.github.amandhakar.documents.edit.PlacedText
 import io.github.amandhakar.documents.edit.TextBoxMath
 import io.github.amandhakar.documents.edit.TextStamp
@@ -53,9 +57,21 @@ data class EditState(
     val placedTexts: List<PlacedText> = emptyList(),
     /** The new text being positioned right now (shown in place of the signature), or null. */
     val floatingText: FloatingText? = null,
+    /** True while tapping lines to highlight them. */
+    val highlightMode: Boolean = false,
+    /** True while drawing with a finger; [penPaused] lets the pages be scrolled meanwhile. */
+    val penMode: Boolean = false,
+    val penPaused: Boolean = false,
+    val penColor: Int = Marks.PEN_COLORS[0],
+    /** Highlights and pen strokes not saved yet, in the order they were made. */
+    val marks: List<PageMark> = emptyList(),
 ) {
+    /** True while any tool that takes touches on the pages is on. */
+    val toolActive: Boolean get() = textMode || highlightMode || penMode
+
     /** Changes that would be written by Save. */
-    val hasPending: Boolean get() = placed.isNotEmpty() || textEdits.isNotEmpty() || placedTexts.isNotEmpty()
+    val hasPending: Boolean
+        get() = placed.isNotEmpty() || textEdits.isNotEmpty() || placedTexts.isNotEmpty() || marks.isNotEmpty()
     val hasEdits: Boolean get() = hasPending || placing != null || editingLine != null
 }
 
@@ -137,7 +153,10 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     /** Starts positioning the signature, in the middle of the screen. */
     fun startPlacing() = _state.update { s ->
         val signature = s.signature ?: return@update s
-        s.copy(floatingText = null, placing = Placement.initial(0, signature.width.toFloat() / signature.height, VIEWPORT_ASPECT))
+        s.copy(
+            floatingText = null, highlightMode = false, penMode = false, textMode = false,
+            placing = Placement.initial(0, signature.width.toFloat() / signature.height, VIEWPORT_ASPECT),
+        )
     }
 
     /** The signature being positioned moved or resized (as fractions of the visible area). */
@@ -151,7 +170,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                 s.copy(message = if (bad.isNotEmpty()) "Can't use ${bad.joinToString(" ")} yet." else "Type some text first.")
             } else {
                 s.copy(
-                    textMode = false,
+                    textMode = false, highlightMode = false, penMode = false,
                     floatingText = FloatingText(prepared, stamp),
                     placing = Placement.initial(0, stamp.aspect, VIEWPORT_ASPECT),
                 )
@@ -181,8 +200,39 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     fun undoLast() = _state.update { it.copy(placed = it.placed.dropLast(1)) }
     fun undoLastText() = _state.update { it.copy(textEdits = it.textEdits.dropLast(1)) }
 
-    fun enterTextMode() = _state.update { it.copy(textMode = true, placing = null, floatingText = null) }
+    fun enterTextMode() = _state.update {
+        it.copy(textMode = true, highlightMode = false, penMode = false, placing = null, floatingText = null)
+    }
+
     fun exitTextMode() = _state.update { it.copy(textMode = false, editingLine = null) }
+
+    fun enterHighlightMode() = _state.update {
+        it.copy(highlightMode = true, textMode = false, penMode = false, editingLine = null, placing = null, floatingText = null)
+    }
+
+    fun enterPenMode() = _state.update {
+        it.copy(penMode = true, penPaused = false, highlightMode = false, textMode = false, editingLine = null, placing = null, floatingText = null)
+    }
+
+    /** Turns every tool that takes touches on the pages off. */
+    fun exitTools() = _state.update { it.copy(textMode = false, highlightMode = false, penMode = false, editingLine = null) }
+
+    fun setPenPaused(paused: Boolean) = _state.update { it.copy(penPaused = paused) }
+    fun setPenColor(color: Int) = _state.update { it.copy(penColor = color) }
+
+    /** Highlights the tapped [line] of [page], or takes its highlight away if it already has one. */
+    fun highlightTapped(page: Int, line: TextLine) = _state.update { s ->
+        val pageLines = s.lines[page] ?: return@update s
+        s.copy(marks = Marks.toggle(s.marks, Marks.highlightFor(page, pageLines, line)))
+    }
+
+    /** Keeps a stroke drawn on [page] with the pen. Taps are ignored. */
+    fun strokeDrawn(page: Int, points: List<MarkPoint>) = _state.update { s ->
+        if (!Marks.isStroke(points)) return@update s
+        s.copy(marks = s.marks + PenStroke(page, Marks.thin(points), Marks.PEN_WIDTH_FRACTION, s.penColor))
+    }
+
+    fun undoLastMark() = _state.update { it.copy(marks = it.marks.dropLast(1)) }
 
     // A private copy of the open PDF that PdfBox reads the text from (PdfBox needs a file).
     private var workingFile: File? = null
@@ -271,6 +321,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 placing = null, placed = emptyList(), padOpen = false, placedTexts = emptyList(), floatingText = null,
                 textMode = false, lines = emptyMap(), textEdits = emptyList(), editingLine = null,
+                highlightMode = false, penMode = false, marks = emptyList(),
             )
         }
     }
@@ -293,7 +344,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
-                    write(source, destination, signature, snapshot.placed, snapshot.textEdits, snapshot.placedTexts)
+                    write(source, destination, signature, snapshot.placed, snapshot.textEdits, snapshot.placedTexts, snapshot.marks)
                     null
                 } catch (e: Throwable) {
                     e
@@ -303,7 +354,8 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                 if (result == null) {
                     it.copy(
                         saving = false, placed = emptyList(), placing = null, textEdits = emptyList(), placedTexts = emptyList(),
-                        lines = emptyMap(), textMode = false, message = "Saved",
+                        lines = emptyMap(), textMode = false, highlightMode = false, penMode = false, marks = emptyList(),
+                        message = "Saved",
                     )
                 } else {
                     it.copy(saving = false, message = SaveNames.errorMessage(result, replacing = destination == null))
@@ -314,7 +366,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun write(source: Uri, destination: Uri?, signature: Bitmap?, placements: List<PlacedSignature>, textEdits: List<TextEdit>, newTexts: List<PlacedText>) {
+    private fun write(source: Uri, destination: Uri?, signature: Bitmap?, placements: List<PlacedSignature>, textEdits: List<TextEdit>, newTexts: List<PlacedText>, marks: List<PageMark>) {
         val context = getApplication<Application>()
         val resolver = context.contentResolver
         val input = File.createTempFile("source", ".pdf", context.cacheDir)
@@ -324,7 +376,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                 input.outputStream().use { stream.copyTo(it) }
             }
             val pages = PdfSigner.pageCount(context, input) ?: throw IOException("Could not read the PDF")
-            PdfSigner.edit(context, input, signature, placements, textEdits, newTexts, output)
+            PdfSigner.edit(context, input, signature, placements, textEdits, newTexts, marks, output)
             // Never touch the target with something that doesn't open as the same PDF.
             if (!PdfSigner.looksValid(context, output, expectedPages = pages)) {
                 throw IOException("The signed PDF did not pass its check")

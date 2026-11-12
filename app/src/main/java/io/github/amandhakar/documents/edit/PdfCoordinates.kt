@@ -24,16 +24,7 @@ object PdfCoordinates {
      * [heightFraction] is the signature's height as a fraction of the shown page height.
      */
     fun imageMatrix(box: PageBox, rotation: Int, placed: PlacedSignature, heightFraction: Float): PdfMatrix {
-        val rot = normalizeRotation(rotation)
-        fun point(u: Float, v: Float): Pair<Float, Float> {
-            val (px, py) = when (rot) {
-                90 -> v * box.width to u * box.height
-                180 -> (1f - u) * box.width to v * box.height
-                270 -> (1f - v) * box.width to (1f - u) * box.height
-                else -> u * box.width to (1f - v) * box.height
-            }
-            return (box.left + px) to (box.bottom + py)
-        }
+        fun point(u: Float, v: Float): Pair<Float, Float> = point(box, rotation, u, v)
         val u0 = placed.left
         val v0 = placed.top
         val bottomLeft = point(u0, v0 + heightFraction)
@@ -47,5 +38,19 @@ object PdfCoordinates {
             e = bottomLeft.first,
             f = bottomLeft.second,
         )
+    }
+
+    /**
+     * The PDF page coordinates of the spot ([u], [v]) on the page as shown on screen: fractions from the top-left,
+     * whatever the page's [rotation].
+     */
+    fun point(box: PageBox, rotation: Int, u: Float, v: Float): Pair<Float, Float> {
+        val (px, py) = when (normalizeRotation(rotation)) {
+            90 -> v * box.width to u * box.height
+            180 -> (1f - u) * box.width to v * box.height
+            270 -> (1f - v) * box.width to (1f - u) * box.height
+            else -> u * box.width to (1f - v) * box.height
+        }
+        return (box.left + px) to (box.bottom + py)
     }
 }

@@ -77,6 +77,11 @@ import io.github.amandhakar.documents.edit.LineHit
 import io.github.amandhakar.documents.edit.PageLines
 import io.github.amandhakar.documents.edit.TextEdit
 import io.github.amandhakar.documents.edit.TextLine
+import io.github.amandhakar.documents.edit.Highlight
+import io.github.amandhakar.documents.edit.MarkPoint
+import io.github.amandhakar.documents.edit.Marks
+import io.github.amandhakar.documents.edit.PageMark
+import io.github.amandhakar.documents.edit.PenStroke
 import io.github.amandhakar.documents.edit.PageHit
 import io.github.amandhakar.documents.edit.PageRow
 import io.github.amandhakar.documents.edit.PlacedSignature
@@ -258,6 +263,8 @@ private fun PageImage(
     var holding by remember { mutableStateOf(false) }
     // The spot (in this page's pixels) the magnifier bubble shows, or Unspecified for no bubble.
     var loupe by remember { mutableStateOf(Offset.Unspecified) }
+    // The pen stroke being drawn right now, in this page's pixels.
+    var stroke by remember { mutableStateOf(listOf<Offset>()) }
 
     fun norm(p: Offset) = NormPoint(PageGeometry.fraction(p.x, pageSize.width), PageGeometry.fraction(p.y, pageSize.height))
 
@@ -282,15 +289,19 @@ private fun PageImage(
                 elevation = 4.dp,
             )
             .then(
-                if (editing != null && editing.textMode) {
-                    Modifier.pointerInput(editing.lines[index], pageSize, loaded) {
+                if (editing != null && editing.linesTappable) {
+                    Modifier.pointerInput(editing.lines[index], pageSize, loaded, editing.highlightMode) {
                         val found = editing.lines[index]
                         if (found != null && found.supported && found.widthPt > 0f) {
                             detectTapGestures { tap ->
                                 val x = tap.x / pageSize.width * found.widthPt
                                 val y = tap.y / pageSize.height * found.heightPt
                                 LineHit.find(found.lines, x, y)?.let { line ->
-                                    editing.onLineTapped(index, line, coverColorAround(loaded, found, line))
+                                    if (editing.highlightMode) {
+                                        editing.onHighlightTapped(index, line)
+                                    } else {
+                                        editing.onLineTapped(index, line, coverColorAround(loaded, found, line))
+                                    }
                                 }
                             }
                         }
@@ -300,7 +311,30 @@ private fun PageImage(
                 },
             )
             .then(
-                if (document.supportsTextSelection) {
+                if (editing != null && editing.penMode && !editing.penPaused) {
+                    Modifier.pointerInput(pageSize, index) {
+                        detectDragGestures(
+                            onDragStart = { at -> stroke = listOf(at) },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                stroke = stroke + change.position
+                            },
+                            onDragEnd = {
+                                val points = stroke.map {
+                                    MarkPoint(PageGeometry.fraction(it.x, pageSize.width), PageGeometry.fraction(it.y, pageSize.height))
+                                }
+                                stroke = emptyList()
+                                editing.onStroke(index, points)
+                            },
+                            onDragCancel = { stroke = emptyList() },
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .then(
+                if (document.supportsTextSelection && editing?.toolActive != true) {
                     Modifier.pointerInput(document, index) {
                         var anchor = Offset.Zero
                         detectDragGesturesAfterLongPress(
@@ -336,15 +370,16 @@ private fun PageImage(
             modifier = Modifier.fillMaxWidth(),
             contentScale = ContentScale.FillWidth,
         )
-        if (editing != null && editing.textMode) {
+        if (editing != null && editing.linesTappable) {
             LaunchedEffect(index) { editing.onNeedLines(index) }
         }
         if (editing != null && pageSize.width > 0 && pageSize.height > 0) {
             for (change in editing.textEdits) {
                 if (change.page == index) TextChangeOnPage(change, pageSize)
             }
+            MarksOnPage(editing.marks.filter { it.page == index }, stroke, editing.penColor)
             val found = editing.lines[index]
-            if (editing.textMode && found != null && found.supported && found.widthPt > 0f) {
+            if (editing.linesTappable && found != null && found.supported && found.widthPt > 0f) {
                 LineOutlines(found, pageSize)
             }
             val pageAspect = pageSize.width.toFloat() / pageSize.height
@@ -603,7 +638,24 @@ class EditingUi(
     val onNeedLines: (Int) -> Unit = {},
     /** A line was tapped: page, the line, and the background colour around it. */
     val onLineTapped: (Int, TextLine, Int) -> Unit = { _, _, _ -> },
-)
+    /** True while tapping lines to highlight them. */
+    val highlightMode: Boolean = false,
+    /** True while drawing with a finger; [penPaused] lets the pages scroll instead. */
+    val penMode: Boolean = false,
+    val penPaused: Boolean = false,
+    val penColor: Int = 0xFF1A237E.toInt(),
+    /** Highlights and pen strokes not saved yet. */
+    val marks: List<PageMark> = emptyList(),
+    val onHighlightTapped: (Int, TextLine) -> Unit = { _, _ -> },
+    /** A stroke was finished on a page. */
+    val onStroke: (Int, List<MarkPoint>) -> Unit = { _, _ -> },
+) {
+    /** True while a tool that takes touches on the pages is on (so text selection steps aside). */
+    val toolActive: Boolean get() = textMode || highlightMode || penMode
+
+    /** True while lines are outlined and tappable. */
+    val linesTappable: Boolean get() = textMode || highlightMode
+}
 
 private val SignatureFrame = Color(0xFF3390FF)
 
@@ -736,16 +788,21 @@ private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
             .background(Color(change.cover)),
     )
     if (change.text.isNotEmpty()) {
+        // Put the text's baseline on the original line's baseline (Compose adds space above the letters,
+        // so aligning the tops would draw the text too low).
+        var firstBaseline by remember(change.text, change.fontSizePt) { mutableStateOf(0f) }
+        val baselinePx = change.baseline * pageSize.height
         androidx.compose.material3.Text(
             change.text,
             color = Color.Black,
             fontSize = with(density) { (change.fontSizePt * scale).toSp() },
             maxLines = 1,
             softWrap = false,
+            onTextLayout = { firstBaseline = it.firstBaseline },
             modifier = Modifier.offset {
                 IntOffset(
                     (change.left * pageSize.width).roundToInt(),
-                    (change.top * pageSize.height).roundToInt(),
+                    (baselinePx - firstBaseline).roundToInt(),
                 )
             },
         )
@@ -781,4 +838,51 @@ private fun BoxScope.NewTextOnPage(text: PlacedText, pageSize: IntSize, pageAspe
             ),
         contentScale = ContentScale.FillBounds,
     )
+}
+
+/** Highlights and pen strokes on a page, plus the stroke being drawn now ([live], in the page's pixels). */
+@Composable
+private fun BoxScope.MarksOnPage(marks: List<PageMark>, live: List<Offset>, liveColor: Int) {
+    if (marks.isEmpty() && live.isEmpty()) return
+    Canvas(Modifier.matchParentSize()) {
+        for (mark in marks) {
+            when (mark) {
+                is Highlight -> drawRect(
+                    color = Color(mark.color).copy(alpha = Marks.HIGHLIGHT_ALPHA),
+                    topLeft = Offset(mark.left * size.width, mark.top * size.height),
+                    size = Size(mark.width * size.width, mark.height * size.height),
+                )
+                is PenStroke -> if (mark.points.size >= 2) {
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(mark.points[0].x * size.width, mark.points[0].y * size.height)
+                        for (p in mark.points.drop(1)) lineTo(p.x * size.width, p.y * size.height)
+                    }
+                    drawPath(
+                        path,
+                        Color(mark.color),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = mark.widthFraction * size.width,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                            join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                        ),
+                    )
+                }
+            }
+        }
+        if (live.size >= 2) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(live[0].x, live[0].y)
+                for (p in live.drop(1)) lineTo(p.x, p.y)
+            }
+            drawPath(
+                path,
+                Color(liveColor),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = Marks.PEN_WIDTH_FRACTION * size.width,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                ),
+            )
+        }
+    }
 }

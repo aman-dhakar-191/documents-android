@@ -8,6 +8,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.util.Matrix
 import java.io.File
 import java.io.IOException
@@ -31,9 +32,12 @@ object PdfSigner {
         placements: List<PlacedSignature>,
         textEdits: List<TextEdit>,
         newTexts: List<PlacedText>,
+        marks: List<PageMark>,
         output: File,
     ) {
-        require(placements.isNotEmpty() || textEdits.isNotEmpty() || newTexts.isNotEmpty()) { "nothing to change" }
+        require(placements.isNotEmpty() || textEdits.isNotEmpty() || newTexts.isNotEmpty() || marks.isNotEmpty()) {
+            "nothing to change"
+        }
         require(placements.isEmpty() || signature != null) { "no signature picture" }
         PDFBoxResourceLoader.init(context.applicationContext)
         // Scratch files, not memory, for the parts of big documents.
@@ -43,6 +47,8 @@ object PdfSigner {
             require(newTexts.all { it.place.page in 0 until doc.numberOfPages }) { "no such page" }
             for (edit in textEdits) drawTextEdit(doc, edit)
             for (text in newTexts) drawNewText(doc, text)
+            require(marks.all { it.page in 0 until doc.numberOfPages }) { "no such page" }
+            for (mark in marks) drawMark(doc, mark)
             if (signature == null) {
                 doc.save(output)
                 return
@@ -114,6 +120,49 @@ object PdfSigner {
             content.newLineAtOffset(crop.lowerLeftX + newText.place.left * w, crop.lowerLeftY + (1f - baseline) * h)
             content.showText(newText.text)
             content.endText()
+        }
+    }
+
+    /** Draws a highlight (a see-through yellow box) or a pen stroke, on any page rotation. */
+    private fun drawMark(doc: PDDocument, mark: PageMark) {
+        val page = doc.getPage(mark.page)
+        val rotation = page.rotation
+        val crop = page.cropBox
+        val box = PageBox(crop.lowerLeftX, crop.lowerLeftY, crop.width, crop.height)
+        PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { content ->
+            when (mark) {
+                is Highlight -> {
+                    val see = PDExtendedGraphicsState()
+                    see.nonStrokingAlphaConstant = Marks.HIGHLIGHT_ALPHA
+                    content.setGraphicsStateParameters(see)
+                    content.setNonStrokingColor((mark.color shr 16) and 0xFF, (mark.color shr 8) and 0xFF, mark.color and 0xFF)
+                    val corners = listOf(
+                        PdfCoordinates.point(box, rotation, mark.left, mark.top),
+                        PdfCoordinates.point(box, rotation, mark.left + mark.width, mark.top),
+                        PdfCoordinates.point(box, rotation, mark.left + mark.width, mark.top + mark.height),
+                        PdfCoordinates.point(box, rotation, mark.left, mark.top + mark.height),
+                    )
+                    content.moveTo(corners[0].first, corners[0].second)
+                    for (c in corners.drop(1)) content.lineTo(c.first, c.second)
+                    content.closePath()
+                    content.fill()
+                }
+                is PenStroke -> {
+                    if (mark.points.size < 2) return@use
+                    content.setStrokingColor((mark.color shr 16) and 0xFF, (mark.color shr 8) and 0xFF, mark.color and 0xFF)
+                    val shownWidth = if (PdfCoordinates.normalizeRotation(rotation) % 180 == 0) box.width else box.height
+                    content.setLineWidth(mark.widthFraction * shownWidth)
+                    content.setLineCapStyle(1)
+                    content.setLineJoinStyle(1)
+                    val first = PdfCoordinates.point(box, rotation, mark.points[0].x, mark.points[0].y)
+                    content.moveTo(first.first, first.second)
+                    for (p in mark.points.drop(1)) {
+                        val at = PdfCoordinates.point(box, rotation, p.x, p.y)
+                        content.lineTo(at.first, at.second)
+                    }
+                    content.stroke()
+                }
+            }
         }
     }
 

@@ -59,8 +59,11 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     always black and the font is not matched; rotated pages and scans (no text) are not supported. Stage 2: **Add text** puts a new
     piece of text anywhere: it is typed, then dragged and resized (the width chosen sets the font size) like the
     signature, and written as real Helvetica text on Save (same character limits as above, black, one line, at
-    most 200 characters; rotated pages not supported). Next stages (not started): highlight and pen drawing,
-    really removing the old text from the page content, matching the font.
+    most 200 characters; rotated pages not supported). Stage 3: **Highlight** (tap a line, tap
+    again to remove: a translucent yellow box drawn over the text so the words stay readable) and **Draw** (a
+    finger pen in three colours; a toggle switches between drawing and scrolling the pages; works on rotated
+    pages too). Both are saved into the page content with the other changes. Next stages (not started): really
+    removing the old text from the page content, matching the font.
 
 ## Phases
 | Phase | Scope | Status |

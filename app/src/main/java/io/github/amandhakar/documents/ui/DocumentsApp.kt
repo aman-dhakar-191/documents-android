@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +57,7 @@ import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
+import io.github.amandhakar.documents.edit.Marks
 import io.github.amandhakar.documents.edit.PdfText
 import io.github.amandhakar.documents.edit.TextBoxMath
 import io.github.amandhakar.documents.edit.SaveNames
@@ -121,7 +127,7 @@ fun DocumentsApp(
     val goBack: () -> Unit = {
         when {
             edit.placing != null -> editViewModel.cancelPlacing()
-            edit.textMode -> editViewModel.exitTextMode()
+            edit.toolActive -> editViewModel.exitTools()
             edit.hasPending -> askDiscard = true
             else -> leaveViewer()
         }
@@ -141,7 +147,7 @@ fun DocumentsApp(
         }
     }
     val sign: () -> Unit = {
-        editViewModel.exitTextMode()
+        editViewModel.exitTools()
         if (edit.signature == null) editViewModel.openPad() else editViewModel.startPlacing()
     }
     val signatureImage = remember(edit.signature) { edit.signature?.asImageBitmap() }
@@ -341,17 +347,40 @@ fun DocumentsApp(
                                             text = { Text(if (edit.textMode) "Stop changing text" else "Change text") },
                                             onClick = {
                                                 menuOpen = false
-                                                if (edit.textMode) editViewModel.exitTextMode() else editViewModel.enterTextMode()
+                                                if (edit.textMode) editViewModel.exitTools() else editViewModel.enterTextMode()
                                             },
                                         )
                                         DropdownMenuItem(
                                             text = { Text("Add text") },
                                             onClick = {
                                                 menuOpen = false
-                                                editViewModel.exitTextMode()
+                                                editViewModel.exitTools()
                                                 askNewText = true
                                             },
                                         )
+                                        DropdownMenuItem(
+                                            text = { Text("Highlight") },
+                                            onClick = {
+                                                menuOpen = false
+                                                editViewModel.enterHighlightMode()
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Draw") },
+                                            onClick = {
+                                                menuOpen = false
+                                                editViewModel.enterPenMode()
+                                            },
+                                        )
+                                        if (edit.marks.isNotEmpty()) {
+                                            DropdownMenuItem(
+                                                text = { Text("Undo last highlight or drawing") },
+                                                onClick = {
+                                                    menuOpen = false
+                                                    editViewModel.undoLastMark()
+                                                },
+                                            )
+                                        }
                                         if (edit.placedTexts.isNotEmpty()) {
                                             DropdownMenuItem(
                                                 text = { Text("Undo last added text") },
@@ -423,16 +452,23 @@ fun DocumentsApp(
                                 onCancel = { editViewModel.cancelPlacing() },
                                 onRedraw = { editViewModel.openPad() },
                                 textMode = edit.textMode,
+                                highlightMode = edit.highlightMode,
+                                penMode = edit.penMode,
+                                penPaused = edit.penPaused,
+                                penColor = edit.penColor,
+                                marks = edit.marks,
+                                onHighlightTapped = { page, line -> editViewModel.highlightTapped(page, line) },
+                                onStroke = { page, points -> editViewModel.strokeDrawn(page, points) },
                                 lines = edit.lines,
                                 textEdits = edit.textEdits,
                                 onNeedLines = { page -> viewModel.openUri()?.let { editViewModel.requestLines(page, it) } },
                                 onLineTapped = { page, line, cover -> editViewModel.lineTapped(page, line, cover) },
                             ),
                         )
-                        if (edit.textMode) {
+                        if (edit.toolActive) {
                             Surface(
                                 modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
-                                shape = RoundedCornerShape(50),
+                                shape = RoundedCornerShape(24.dp),
                                 shadowElevation = 6.dp,
                                 tonalElevation = 3.dp,
                             ) {
@@ -440,8 +476,25 @@ fun DocumentsApp(
                                     Modifier.padding(start = 16.dp, end = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text("Tap a line of text to change it")
-                                    TextButton(onClick = { editViewModel.exitTextMode() }) { Text("Done") }
+                                    when {
+                                        edit.textMode -> Text("Tap a line of text to change it")
+                                        edit.highlightMode -> Text("Tap a line to highlight it")
+                                        else -> {
+                                            for (color in Marks.PEN_COLORS) {
+                                                Box(
+                                                    Modifier
+                                                        .padding(end = 8.dp)
+                                                        .size(if (edit.penColor == color) 28.dp else 22.dp)
+                                                        .background(Color(color), CircleShape)
+                                                        .clickable { editViewModel.setPenColor(color) },
+                                                )
+                                            }
+                                            TextButton(onClick = { editViewModel.setPenPaused(!edit.penPaused) }) {
+                                                Text(if (edit.penPaused) "Scrolling: tap to draw" else "Drawing: tap to scroll")
+                                            }
+                                        }
+                                    }
+                                    TextButton(onClick = { editViewModel.exitTools() }) { Text("Done") }
                                 }
                             }
                         }
