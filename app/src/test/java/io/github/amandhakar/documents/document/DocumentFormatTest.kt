@@ -31,7 +31,8 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromFileName(null))
         assertNull(DocumentFormat.fromFileName(""))
         assertNull(DocumentFormat.fromFileName("pdf"))
-        assertNull(DocumentFormat.fromFileName("notes.docx"))
+        assertNull(DocumentFormat.fromFileName("notes.doc"))
+        assertNull(DocumentFormat.fromFileName("slides.pptx"))
         assertNull(DocumentFormat.fromFileName("report.pdf.exe"))
     }
 
