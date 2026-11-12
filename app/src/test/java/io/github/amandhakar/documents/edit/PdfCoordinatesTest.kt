@@ -61,4 +61,18 @@ class PdfCoordinatesTest {
         assertEquals(10f + 0.4f * 600f, topRightX, eps)
         assertEquals(20f + 0.8f * 800f, topRightY, eps)
     }
+
+    @Test fun theTopLeftOfThePageShownMapsToTheRightCornerForEachRotation() {
+        assertEquals(10f to 820f, PdfCoordinates.point(box, 0, 0f, 0f))
+        assertEquals(10f to 20f, PdfCoordinates.point(box, 90, 0f, 0f))
+        assertEquals(610f to 20f, PdfCoordinates.point(box, 180, 0f, 0f))
+        assertEquals(610f to 820f, PdfCoordinates.point(box, 270, 0f, 0f))
+    }
+
+    @Test fun theBottomRightOfThePageShownMapsToTheOppositeCorner() {
+        assertEquals(610f to 20f, PdfCoordinates.point(box, 0, 1f, 1f))
+        assertEquals(610f to 820f, PdfCoordinates.point(box, 90, 1f, 1f))
+        assertEquals(10f to 820f, PdfCoordinates.point(box, 180, 1f, 1f))
+        assertEquals(10f to 20f, PdfCoordinates.point(box, 270, 1f, 1f))
+    }
 }
