@@ -788,16 +788,21 @@ private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
             .background(Color(change.cover)),
     )
     if (change.text.isNotEmpty()) {
+        // Put the text's baseline on the original line's baseline (Compose adds space above the letters,
+        // so aligning the tops would draw the text too low).
+        var firstBaseline by remember(change.text, change.fontSizePt) { mutableStateOf(0f) }
+        val baselinePx = change.baseline * pageSize.height
         androidx.compose.material3.Text(
             change.text,
             color = Color.Black,
             fontSize = with(density) { (change.fontSizePt * scale).toSp() },
             maxLines = 1,
             softWrap = false,
+            onTextLayout = { firstBaseline = it.firstBaseline },
             modifier = Modifier.offset {
                 IntOffset(
                     (change.left * pageSize.width).roundToInt(),
-                    (change.top * pageSize.height).roundToInt(),
+                    (baselinePx - firstBaseline).roundToInt(),
                 )
             },
         )
