@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.amandhakar.documents.edit.PageLines
+import io.github.amandhakar.documents.edit.EraseOutcome
 import io.github.amandhakar.documents.edit.MarkPoint
 import io.github.amandhakar.documents.edit.Marks
 import io.github.amandhakar.documents.edit.PageMark
@@ -344,7 +345,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
      * itself when [destination] is null. The result is checked before anything is overwritten, and if
      * writing over the original fails part-way the original is put back. [onFinished] gets true on success.
      */
-    fun save(source: Uri, destination: Uri?, onFinished: (Boolean) -> Unit) {
+    fun save(source: Uri, destination: Uri?, eraseOld: Boolean = false, onFinished: (Boolean) -> Unit) {
         val snapshot = _state.value
         val signature = snapshot.signature
         if (!snapshot.hasPending || snapshot.saving || (snapshot.placed.isNotEmpty() && signature == null)) {
@@ -353,9 +354,13 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         }
         _state.update { it.copy(saving = true) }
         viewModelScope.launch {
+            var outcome: EraseOutcome? = null
             val result = withContext(Dispatchers.IO) {
                 try {
-                    write(source, destination, signature, snapshot.placed, snapshot.textEdits, snapshot.placedTexts, snapshot.marks)
+                    outcome = write(
+                        source, destination, signature, snapshot.placed, snapshot.textEdits, snapshot.placedTexts,
+                        snapshot.marks, eraseOld,
+                    )
                     null
                 } catch (e: Throwable) {
                     e
@@ -366,7 +371,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         saving = false, placed = emptyList(), placing = null, textEdits = emptyList(), placedTexts = emptyList(),
                         lines = emptyMap(), textMode = false, highlightMode = false, penMode = false, marks = emptyList(),
-                        message = "Saved",
+                        message = savedMessage(eraseOld, outcome),
                     )
                 } else {
                     it.copy(saving = false, message = SaveNames.errorMessage(result, replacing = destination == null))
@@ -377,7 +382,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun write(source: Uri, destination: Uri?, signature: Bitmap?, placements: List<PlacedSignature>, textEdits: List<TextEdit>, newTexts: List<PlacedText>, marks: List<PageMark>) {
+    private fun write(source: Uri, destination: Uri?, signature: Bitmap?, placements: List<PlacedSignature>, textEdits: List<TextEdit>, newTexts: List<PlacedText>, marks: List<PageMark>, eraseOld: Boolean): EraseOutcome {
         val context = getApplication<Application>()
         val resolver = context.contentResolver
         val input = File.createTempFile("source", ".pdf", context.cacheDir)
@@ -387,7 +392,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                 input.outputStream().use { stream.copyTo(it) }
             }
             val pages = PdfSigner.pageCount(context, input) ?: throw IOException("Could not read the PDF")
-            PdfSigner.edit(context, input, signature, placements, textEdits, newTexts, marks, output)
+            val outcome = PdfSigner.edit(context, input, signature, placements, textEdits, newTexts, marks, eraseOld, output)
             // Never touch the target with something that doesn't open as the same PDF.
             if (!PdfSigner.looksValid(context, output, expectedPages = pages)) {
                 throw IOException("The signed PDF did not pass its check")
@@ -401,6 +406,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
                 if (replacing) restore(source, input)
                 throw e
             }
+            return outcome
         } finally {
             input.delete()
             output.delete()
@@ -417,4 +423,14 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
             // Nothing more can be done here.
         }
     }
+}
+
+/** What to tell the person after a save: plain "Saved", or how the removal of old text went. */
+internal fun savedMessage(eraseOld: Boolean, outcome: EraseOutcome?): String = when {
+    !eraseOld || outcome == null -> "Saved"
+    outcome.failedPages.isEmpty() && outcome.removedCharacters > 0 -> "Saved. The old text was removed from the file."
+    outcome.removedCharacters == 0 ->
+        "Saved, but the old text could only be covered, not removed (page ${outcome.failedPages.joinToString { (it + 1).toString() }})."
+    else ->
+        "Saved. The old text was removed, except on page ${outcome.failedPages.joinToString { (it + 1).toString() }}, where it is only covered."
 }

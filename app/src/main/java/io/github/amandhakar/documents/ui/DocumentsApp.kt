@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -88,6 +89,8 @@ fun DocumentsApp(
     var askSaveChoice by rememberSaveable { mutableStateOf(false) }
     var askDiscard by rememberSaveable { mutableStateOf(false) }
     var askNewText by rememberSaveable { mutableStateOf(false) }
+    // Save also removes the old text under Change text edits (experimental), instead of only covering it.
+    var eraseOld by rememberSaveable { mutableStateOf(false) }
 
     // True while the PDF on screen was opened by another app: Back then returns to that app.
     var openedFromOutside by rememberSaveable { mutableStateOf(false) }
@@ -137,7 +140,7 @@ fun DocumentsApp(
     val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { target ->
         val source = viewModel.openUri()
         if (target != null && source != null) {
-            editViewModel.save(source, target) { saved -> if (saved) openOurselves(target) }
+            editViewModel.save(source, target, eraseOld) { saved -> if (saved) openOurselves(target) }
         }
     }
     LaunchedEffect(edit.message) {
@@ -185,7 +188,20 @@ fun DocumentsApp(
             AlertDialog(
                 onDismissRequest = { askSaveChoice = false },
                 title = { Text("Save signed PDF") },
-                text = { Text("Save it as a new file, or replace this one? Replacing can't be undone.") },
+                text = {
+                    Column {
+                        Text("Save it as a new file, or replace this one? Replacing can't be undone.")
+                        if (edit.textEdits.isNotEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = eraseOld, onCheckedChange = { eraseOld = it })
+                                Text(
+                                    "Also remove the old text from the file, not just cover it (experimental)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                },
                 confirmButton = {
                     Button(onClick = {
                         askSaveChoice = false
@@ -200,7 +216,7 @@ fun DocumentsApp(
                             val source = viewModel.openUri()
                             if (source != null) {
                                 viewModel.releaseForWrite()
-                                editViewModel.save(source, null) { viewModel.reopen() }
+                                editViewModel.save(source, null, eraseOld) { viewModel.reopen() }
                             }
                         }) { Text("Replace original") }
                     }
