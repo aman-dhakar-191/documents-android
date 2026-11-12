@@ -34,3 +34,31 @@ class LibraryFilterTest {
     @Test fun aFileWithoutTheFormatArgumentIsAPdf() =
         assertEquals(DocumentFormat.Pdf, PdfFile(id = 1, name = "a.pdf", folder = "", sizeBytes = 1, modifiedSeconds = 0).format)
 }
+
+class LibrarySearchTest {
+    private fun file(id: Long, name: String, folder: String = "Download", format: DocumentFormat = DocumentFormat.Pdf) =
+        PdfFile(id = id, name = name, folder = folder, sizeBytes = 1, modifiedSeconds = 0, format = format)
+
+    private val files = listOf(
+        file(1, "Train Ticket.pdf"),
+        file(2, "invoice-march.pdf", folder = "Work"),
+        file(3, "recipe.html", format = DocumentFormat.Html),
+    )
+
+    private fun ids(query: String, filter: LibraryFilter = LibraryFilter.All) =
+        LibraryFilters.apply(files, filter, query).map { it.id }
+
+    @Test fun anEmptyQueryShowsEverything() = assertEquals(listOf(1L, 2L, 3L), ids(""))
+    @Test fun aBlankQueryShowsEverything() = assertEquals(listOf(1L, 2L, 3L), ids("   "))
+    @Test fun matchingIgnoresCase() = assertEquals(listOf(1L), ids("TRAIN"))
+    @Test fun matchesPartOfAName() = assertEquals(listOf(2L), ids("voice"))
+    @Test fun everyWordMustMatch() = assertEquals(listOf(1L), ids("ticket train"))
+    @Test fun aWordThatMatchesNothingGivesNothing() = assertEquals(emptyList<Long>(), ids("train zebra"))
+    @Test fun theFolderNameCounts() = assertEquals(listOf(2L), ids("work"))
+    @Test fun searchRespectsTheChip() {
+        assertEquals(listOf(3L), ids("recipe", LibraryFilter.Web))
+        assertEquals(emptyList<Long>(), ids("recipe", LibraryFilter.Pdf))
+    }
+    @Test fun surroundingSpacesAreIgnored() = assertEquals(listOf(1L), ids("  train  "))
+    @Test fun queryCharactersAreNotPatterns() = assertEquals(emptyList<Long>(), ids(".*"))
+}

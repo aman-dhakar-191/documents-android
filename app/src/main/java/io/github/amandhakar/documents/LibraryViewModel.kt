@@ -37,7 +37,16 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val _filter = MutableStateFlow(LibraryFilter.All)
     val filter: StateFlow<LibraryFilter> = _filter
 
+    // What was typed in the search box ("" when it is closed).
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query
+
     private var job: Job? = null
+
+    fun setQuery(query: String) {
+        _query.value = query
+        _selected.value = emptySet() // what was ticked may no longer be on screen
+    }
 
     fun setFilter(filter: LibraryFilter) {
         _filter.value = filter
@@ -53,7 +62,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun selectAll() {
-        (_state.value as? LibraryState.Ready)?.let { _selected.value = MultiSelect.all(LibraryFilters.apply(it.files, _filter.value)) }
+        (_state.value as? LibraryState.Ready)?.let { _selected.value = MultiSelect.all(LibraryFilters.apply(it.files, _filter.value, _query.value)) }
     }
 
     /** Re-checks permission and re-reads the list. The old list stays on screen while it loads. */

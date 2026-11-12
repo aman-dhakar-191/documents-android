@@ -84,6 +84,8 @@ fun DocumentsApp(
     val libraryState by libraryViewModel.state.collectAsState()
     val selectedIds by libraryViewModel.selected.collectAsState()
     val edit by editViewModel.state.collectAsState()
+    val query by libraryViewModel.query.collectAsState()
+    var searching by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     var zoom by rememberSaveable { mutableStateOf(1f) }
     // Lives here (not in the library screen) so the list keeps its scroll position after reading a PDF.
@@ -166,6 +168,12 @@ fun DocumentsApp(
     // Choosing PDFs in the list: Back (or Cancel) unticks everything instead of leaving.
     val selectionActive = inLibrary && selectedIds.isNotEmpty()
     BackHandler(enabled = selectionActive) { libraryViewModel.clearSelection() }
+    // Back while the search box is open closes it and shows every file again.
+    val closeSearch: () -> Unit = {
+        searching = false
+        libraryViewModel.setQuery("")
+    }
+    BackHandler(enabled = inLibrary && searching && !selectionActive, onBack = closeSearch)
 
     val shareChosen: () -> Unit = {
         val files = MultiSelect.chosen((libraryState as? LibraryState.Ready)?.files.orEmpty(), selectedIds)
@@ -182,7 +190,7 @@ fun DocumentsApp(
         }
     }
 
-    MaterialTheme {
+    DocsTheme {
         if (edit.padOpen) {
             SignaturePadDialog(
                 onDone = { bitmap -> editViewModel.signatureDrawn(bitmap) },
@@ -363,11 +371,13 @@ fun DocumentsApp(
                         },
                     )
                 } else if (inLibrary) {
-                    TopAppBar(
-                        title = { Text("Documents") },
-                        actions = {
-                            TextButton(onClick = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml")) }) { Text("Browse") }
-                        },
+                    LibraryHeader(
+                        searching = searching,
+                        query = query,
+                        onQuery = { libraryViewModel.setQuery(it) },
+                        onSearch = { searching = true },
+                        onCloseSearch = closeSearch,
+                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml")) },
                     )
                 } else if (state is ViewerState.Web) {
                     TopAppBar(
