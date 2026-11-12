@@ -20,7 +20,7 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    files, so the manifest asks for `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+,
    switched on by the user in Settings) and `READ_EXTERNAL_STORAGE` (`maxSdkVersion` 29). The
    owner chose this over picking folders or a "recently opened" list. Trade-off: it is a broad
-   permission that friends will see. The app has no `INTERNET` permission and uploads nothing.
+   permission that friends will see. Since v0.14 the app also has `INTERNET`, used only by saved web pages after the person allows it per page (decision 11); it uploads nothing.
    A `<queries>` entry (not a permission) lets the app see which PDF viewers exist, to tell the
    user which one is the default. Without the permission the library screen explains why it is needed and offers Browse (the
    picker) instead. Any further permission needs a new decision here.
@@ -78,12 +78,14 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
 11. **Web pages (.html).** Opened in Android's `WebView` (part of the system, no library) on a screen of its own, since a
     page isn't a stack of pictures. The page is untrusted: scripts are off unless the person allows them for that
     opening; file and content access, DOM storage, pop-ups, downloads and location are off; the page's text is loaded
-    from the one opened file with no base address, so nothing next to it is found. **No INTERNET permission was added**
-    and every online request (`http` / `https`) is refused and counted, with a note on screen ("N online parts were
-    blocked"). Tapping a web, mail or phone link asks first and then opens it outside the app; every other link kind is
-    blocked. Pages over 8 MB aren't opened. The owner confirmed this approach (remote parts blocked) in place of asking for
-    the internet permission. Intent filters only match local `content:` / `file:` addresses, so the app does not take
-    over links to websites. The library lists web pages too, under chips (All, PDF, Web pages, each with a count; more chips are added with each new format). Web page cards show a globe instead of a first-page preview. Not yet: save as PDF, find in page, share from the viewer.
+    from the one opened file with no base address, so nothing next to it is found. **Online parts are blocked by default.** The owner later asked for internet on web pages
+    (pages didn't look right), and chose a **per-page switch, off by default**: the manifest now has `INTERNET`, with cleartext
+    traffic off. The WebView still blocks network loads; "Load online parts" (card or ⋮) turns that off for the
+    current opening only, and then only `https` loads (`WebRequestPolicy`: plain `http` is always refused, odd schemes are
+    denied, cookies are not kept). Without the switch every online request is refused and counted ("N online parts not shown").
+    Tapping a web, mail or phone link asks first and then opens it outside the app; every other link kind is
+    blocked. Pages over 8 MB aren't opened. Intent filters only match local `content:` / `file:` addresses, so the app does not take
+    over links to websites. The library lists web pages too, under chips (All, PDF, Web pages, each with a count; more chips are added with each new format). Web page cards show a globe instead of a first-page preview. The viewer also has Save as PDF (Android's print screen), Find in page and Share.
 
 ## Phases
 | Phase | Scope | Status |
