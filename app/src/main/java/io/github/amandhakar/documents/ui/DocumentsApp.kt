@@ -462,7 +462,7 @@ fun DocumentsApp(
                                 lines = edit.lines,
                                 textEdits = edit.textEdits,
                                 onNeedLines = { page -> viewModel.openUri()?.let { editViewModel.requestLines(page, it) } },
-                                onLineTapped = { page, line, cover -> editViewModel.lineTapped(page, line, cover) },
+                                onLineTapped = { page, line, cover, ink -> editViewModel.lineTapped(page, line, cover, ink) },
                             ),
                         )
                         if (edit.toolActive) {

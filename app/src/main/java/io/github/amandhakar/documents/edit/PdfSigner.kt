@@ -91,7 +91,7 @@ object PdfSigner {
             if (edit.text.isNotEmpty()) {
                 val font = PDType1Font.HELVETICA
                 val size = TextFit.size(edit.fontSizePt, boxWidth, font.getStringWidth(edit.text) / 1000f * edit.fontSizePt)
-                content.setNonStrokingColor(0, 0, 0)
+                content.setNonStrokingColor((edit.ink shr 16) and 0xFF, (edit.ink shr 8) and 0xFF, edit.ink and 0xFF)
                 content.beginText()
                 content.setFont(font, size)
                 content.newLineAtOffset(x, crop.lowerLeftY + (1f - edit.baseline) * h)

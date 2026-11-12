@@ -75,6 +75,7 @@ import io.github.amandhakar.documents.document.Document
 import io.github.amandhakar.documents.edit.ColorSample
 import io.github.amandhakar.documents.edit.LineHit
 import io.github.amandhakar.documents.edit.PageLines
+import io.github.amandhakar.documents.edit.TextFit
 import io.github.amandhakar.documents.edit.TextEdit
 import io.github.amandhakar.documents.edit.TextLine
 import io.github.amandhakar.documents.edit.Highlight
@@ -300,7 +301,8 @@ private fun PageImage(
                                     if (editing.highlightMode) {
                                         editing.onHighlightTapped(index, line)
                                     } else {
-                                        editing.onLineTapped(index, line, coverColorAround(loaded, found, line))
+                                        val cover = coverColorAround(loaded, found, line)
+                                        editing.onLineTapped(index, line, cover, inkColorOf(loaded, found, line, cover))
                                     }
                                 }
                             }
@@ -636,8 +638,8 @@ class EditingUi(
     val textEdits: List<TextEdit> = emptyList(),
     /** Asks for the lines of a page to be found (called once a page is showing in text mode). */
     val onNeedLines: (Int) -> Unit = {},
-    /** A line was tapped: page, the line, and the background colour around it. */
-    val onLineTapped: (Int, TextLine, Int) -> Unit = { _, _, _ -> },
+    /** A line was tapped: page, the line, the background colour around it, and the colour of its text. */
+    val onLineTapped: (Int, TextLine, Int, Int) -> Unit = { _, _, _, _ -> },
     /** True while tapping lines to highlight them. */
     val highlightMode: Boolean = false,
     /** True while drawing with a finger; [penPaused] lets the pages scroll instead. */
@@ -788,21 +790,37 @@ private fun BoxScope.TextChangeOnPage(change: TextEdit, pageSize: IntSize) {
             .background(Color(change.cover)),
     )
     if (change.text.isNotEmpty()) {
-        // Put the text's baseline on the original line's baseline (Compose adds space above the letters,
-        // so aligning the tops would draw the text too low).
-        var firstBaseline by remember(change.text, change.fontSizePt) { mutableStateOf(0f) }
+        // Shrink the text to the old line's width if it is longer (as saving does), and put its baseline on the
+        // original line's baseline (Compose adds space above the letters, so aligning the tops would draw it too low).
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val sizePx = change.fontSizePt * scale
+        val boxWidthPx = change.width * pageSize.width
+        val fitted = remember(change.text, sizePx, boxWidthPx) {
+            val full = measurer.measure(
+                change.text,
+                androidx.compose.ui.text.TextStyle(fontSize = with(density) { sizePx.toSp() }),
+                maxLines = 1,
+                softWrap = false,
+            )
+            val fittedPx = TextFit.size(sizePx, boxWidthPx, full.size.width.toFloat())
+            measurer.measure(
+                change.text,
+                androidx.compose.ui.text.TextStyle(fontSize = with(density) { fittedPx.toSp() }),
+                maxLines = 1,
+                softWrap = false,
+            ) to fittedPx
+        }
         val baselinePx = change.baseline * pageSize.height
         androidx.compose.material3.Text(
             change.text,
-            color = Color.Black,
-            fontSize = with(density) { (change.fontSizePt * scale).toSp() },
+            color = Color(change.ink),
+            fontSize = with(density) { fitted.second.toSp() },
             maxLines = 1,
             softWrap = false,
-            onTextLayout = { firstBaseline = it.firstBaseline },
             modifier = Modifier.offset {
                 IntOffset(
                     (change.left * pageSize.width).roundToInt(),
-                    (baselinePx - firstBaseline).roundToInt(),
+                    (baselinePx - fitted.first.firstBaseline).roundToInt(),
                 )
             },
         )
@@ -885,4 +903,20 @@ private fun BoxScope.MarksOnPage(marks: List<PageMark>, live: List<Offset>, live
             )
         }
     }
+}
+
+/** The colour of the text on a line: the pixel inside its box furthest from the [background] colour. */
+private fun inkColorOf(page: Bitmap, found: PageLines, line: TextLine, background: Int): Int {
+    val sx = page.width / found.widthPt
+    val sy = page.height / found.heightPt
+    val left = (line.left * sx).toInt().coerceIn(0, page.width - 1)
+    val top = (line.top * sy).toInt().coerceIn(0, page.height - 1)
+    val right = (line.right * sx).toInt().coerceIn(left + 1, page.width)
+    val bottom = (line.bottom * sy).toInt().coerceIn(top + 1, page.height)
+    val width = right - left
+    val height = bottom - top
+    if (width.toLong() * height > 200_000L) return 0xFF000000.toInt() // a huge box: don't read it all
+    val pixels = IntArray(width * height)
+    page.getPixels(pixels, 0, width, left, top, width, height)
+    return ColorSample.textColor(pixels, background)
 }

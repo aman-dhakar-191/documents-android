@@ -79,7 +79,14 @@ data class EditState(
 class FloatingText(val text: String, val stamp: TextStamp)
 
 /** A line of text the person tapped: what to show in the box, and the colour that will cover the old text. */
-data class LineEdit(val page: Int, val pageLines: PageLines, val line: TextLine, val cover: Int, val initialText: String)
+data class LineEdit(
+    val page: Int,
+    val pageLines: PageLines,
+    val line: TextLine,
+    val cover: Int,
+    val ink: Int,
+    val initialText: String,
+)
 
 class EditViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
@@ -294,10 +301,14 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The person tapped [line] on [page]; [cover] is the background colour found around it. */
-    fun lineTapped(page: Int, line: TextLine, cover: Int) = _state.update { s ->
+    fun lineTapped(page: Int, line: TextLine, cover: Int, ink: Int) = _state.update { s ->
         val pageLines = s.lines[page] ?: return@update s
         val existing = s.textEdits.firstOrNull { it.sameLineAs(TextEdit.forLine(page, pageLines, line, "", cover)) }
-        s.copy(editingLine = LineEdit(page, pageLines, line, existing?.cover ?: cover, existing?.text ?: line.text))
+        s.copy(
+            editingLine = LineEdit(
+                page, pageLines, line, existing?.cover ?: cover, existing?.ink ?: ink, existing?.text ?: line.text,
+            ),
+        )
     }
 
     fun cancelLineEdit() = _state.update { it.copy(editingLine = null) }
@@ -307,7 +318,7 @@ class EditViewModel(app: Application) : AndroidViewModel(app) {
         val target = s.editingLine ?: return@update s
         val cleaned = PdfText.clean(text)
         if (PdfText.unsupported(cleaned).isNotEmpty()) return@update s
-        val edit = TextEdit.forLine(target.page, target.pageLines, target.line, cleaned, target.cover)
+        val edit = TextEdit.forLine(target.page, target.pageLines, target.line, cleaned, target.cover, target.ink)
         val others = s.textEdits.filterNot { it.sameLineAs(edit) }
         val unchanged = cleaned == target.line.text
         s.copy(editingLine = null, textEdits = if (unchanged) others else others + edit)
