@@ -6,10 +6,12 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.drag
@@ -26,8 +28,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.magnifier
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,12 +47,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -62,6 +69,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.document.Document
+import io.github.amandhakar.documents.edit.PlacedSignature
+import io.github.amandhakar.documents.edit.Placement
 import io.github.amandhakar.documents.document.NormPoint
 import io.github.amandhakar.documents.document.PageGeometry
 import io.github.amandhakar.documents.document.PageText
@@ -89,6 +98,8 @@ fun PageList(
     zoom: Float,
     onZoomChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState(),
+    editing: EditingUi? = null,
 ) {
     val currentZoom by rememberUpdatedState(zoom)
     val currentOnZoomChange by rememberUpdatedState(onZoomChange)
@@ -139,6 +150,7 @@ fun PageList(
             },
         ) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.horizontalScroll(horizontal).width(contentWidth),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -149,6 +161,7 @@ fun PageList(
                         widthPx = widthPx,
                         selection = selected?.takeIf { it.page == index }?.text,
                         onSelectionChange = { selected = it },
+                        editing = editing,
                     )
                 }
             }
@@ -170,6 +183,7 @@ private fun PageImage(
     widthPx: Int,
     selection: PageText?,
     onSelectionChange: (SelectedText?) -> Unit,
+    editing: EditingUi?,
 ) {
     val bitmap by produceState<Bitmap?>(initialValue = null, document, index, widthPx) {
         value = try {
@@ -268,6 +282,15 @@ private fun PageImage(
             modifier = Modifier.fillMaxWidth(),
             contentScale = ContentScale.FillWidth,
         )
+        if (editing != null && pageSize.width > 0 && pageSize.height > 0) {
+            val pageAspect = pageSize.width.toFloat() / pageSize.height
+            for (placed in editing.placed) {
+                if (placed.page == index) SignatureOnPage(editing, placed, pageSize, pageAspect, null)
+            }
+            editing.placing?.takeIf { it.page == index }?.let {
+                SignatureOnPage(editing, it, pageSize, pageAspect, editing.onPlacingChange)
+            }
+        }
         if (selection != null && pageSize.width > 0 && pageSize.height > 0) {
             SelectionOverlay(
                 selection = selection,
@@ -479,6 +502,79 @@ private fun SelectionHandle(
             val knobY = radius + 2.dp.toPx()
             drawLine(HandleColor, Offset(centerX, 0f), Offset(centerX, knobY), strokeWidth = 2.dp.toPx())
             drawCircle(HandleColor, radius, Offset(centerX, knobY))
+        }
+    }
+}
+
+/** What the page list needs to draw signatures: the picture, those already placed and the one being placed. */
+class EditingUi(
+    val signature: ImageBitmap,
+    val aspect: Float,
+    val placed: List<PlacedSignature>,
+    val placing: PlacedSignature?,
+    val onPlacingChange: (PlacedSignature) -> Unit,
+)
+
+private val SignatureFrame = Color(0xFF3390FF)
+
+/**
+ * A signature on a page. With [onChange] it is the one being placed: drag it to move it and drag the
+ * round handle in its corner to resize it. Without, it is drawn as it will be saved.
+ */
+@Composable
+private fun BoxScope.SignatureOnPage(
+    editing: EditingUi,
+    placed: PlacedSignature,
+    pageSize: IntSize,
+    pageAspect: Float,
+    onChange: ((PlacedSignature) -> Unit)?,
+) {
+    val density = LocalDensity.current
+    val height = Placement.height(placed.width, editing.aspect, pageAspect)
+    val widthPx = placed.width * pageSize.width
+    val heightPx = height * pageSize.height
+    val current by rememberUpdatedState(placed)
+    var box = Modifier
+        .offset { IntOffset((placed.left * pageSize.width).roundToInt(), (placed.top * pageSize.height).roundToInt()) }
+        .size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() })
+    if (onChange != null) {
+        box = box
+            .border(2.dp, SignatureFrame)
+            .pointerInput(pageSize, pageAspect, editing.aspect) {
+                detectDragGestures { change, drag ->
+                    change.consume()
+                    onChange(
+                        Placement.moved(
+                            current,
+                            drag.x / pageSize.width,
+                            drag.y / pageSize.height,
+                            editing.aspect,
+                            pageAspect,
+                        ),
+                    )
+                }
+            }
+    }
+    Box(box) {
+        Image(
+            bitmap = editing.signature,
+            contentDescription = "Your signature",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds,
+        )
+        if (onChange != null) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(28.dp)
+                    .background(SignatureFrame, CircleShape)
+                    .pointerInput(pageSize, pageAspect, editing.aspect) {
+                        detectDragGestures { change, drag ->
+                            change.consume()
+                            onChange(Placement.resized(current, drag.x / pageSize.width, editing.aspect, pageAspect))
+                        }
+                    },
+            )
         }
     }
 }

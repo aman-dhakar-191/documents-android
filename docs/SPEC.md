@@ -36,13 +36,25 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
    through Android's share sheet. Files are handed over as `content://` addresses with a temporary
    read grant to the receiving app, so no permission is added. `file://` paths are refused, because
    they would crash the app on Android 7 and newer.
+9. **Editing (signatures).** Android's built-in PDF editing (`PdfRenderer.Page.addPageObject`) only
+   exists from Android 16.1 (API 36.1 / S Extensions 18), so it can't work on Android 15. The owner
+   chose **PdfBox-Android** (`com.tom-roush:pdfbox-android`, Apache-2.0) over flattening pages into
+   pictures. The signature is added on top of the real page, so text stays selectable and files stay
+   small. Reading and rendering still use `PdfRenderer`. The signature is drawn with a finger, kept as
+   a picture in the app's private storage, and placed by dragging and resizing it on the page.
+   Saving offers a new copy (the system "create file" screen, no permission) or replacing the
+   original. Replacing writes the result to a temporary file and checks it opens with the same page
+   count first, and puts the original back if the write fails. A file another app only let us read
+   can't be replaced: the app then says so and offers a new copy. No new permission was added.
+   Known limits: password-protected PDFs can't be edited; a signature is a picture, not a digital
+   (cryptographic) signature.
 
 ## Phases
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | View PDFs: library of all PDFs as cards with previews, picker (Browse), open-with, scroll, button and pinch zoom, error states, CI, signed releases | In progress (v0.1.0 released; library and pinch zoom not yet device-tested) |
 | 2 | Better viewing: text selection on Android 15+ (built in, no library), then remember last page, password-protected PDFs, text search (search is in the same Android 15 API; older phones would need a third-party library: check licence, e.g. MuPDF is AGPL) | Text selection implemented, not device-tested; rest not started |
-| 3 | PDF annotation / editing (library choice and licence to decide first) | Not started, needs an explicit go-ahead |
+| 3 | PDF annotation / editing: signature first (draw, place, save as new or replace), via PdfBox-Android | Signature implemented, not device-tested; other annotations not started |
 | 4 | Word (.docx) viewing, then editing (large; Apache POI is heavy on Android, faithful layout is hard) | Not started, needs an explicit go-ahead |
 
 "Docs" is assumed to mean Word-style `.doc` / `.docx`. Google Docs would be a separate

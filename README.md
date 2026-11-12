@@ -1,8 +1,8 @@
 # documents-android
 
 An Android app for reading documents, distributed through
-[private-app-store](https://github.com/aman-dhakar-191/private-app-store). Today it opens PDFs.
-Editing and Word documents are planned but not started; see [docs/SPEC.md](docs/SPEC.md).
+[private-app-store](https://github.com/aman-dhakar-191/private-app-store). Today it opens PDFs and can add a signature to them.
+Word documents are planned but not started; see [docs/SPEC.md](docs/SPEC.md).
 
 ## Status
 
@@ -16,11 +16,12 @@ Editing and Word documents are planned but not started; see [docs/SPEC.md](docs/
 | Open a PDF from another app / file manager ("Open with") | Implemented; the owner reports PDFs open on their phone (which route was used isn't recorded) |
 | Scroll pages, zoom with the − / + buttons | Implemented; the owner reports PDFs open on their phone, zoom buttons not separately checked |
 | Pinch-to-zoom with two fingers | Implemented, **not yet tested on a device** |
-| Unit tests (format detection, page sizing, zoom, card text and ordering, default-app detection logic, page-coordinate and handle/menu placement maths for text selection, which screen Back goes to, ticking PDFs in the list, which files can be shared) | Written; CI result: see the Actions tab |
+| Unit tests (signature placement, PDF coordinate and rotation maths, signature ink layout, save names and error messages, format detection, page sizing, zoom, card text and ordering, default-app detection logic, page-coordinate and handle/menu placement maths for text selection, which screen Back goes to, ticking PDFs in the list, which files can be shared) | Written; CI result: see the Actions tab |
 | Share: **Share** in the header while reading sends the PDF file; in the library, press and hold a card to choose PDFs (tap more to add, **Select all**, **Cancel**) and **Share** sends all the chosen files at once; the text menu's **Share** sends the selected text. PDFs opened as a plain `file://` path can't be shared | Implemented, **not yet tested on a device** |
 | Select text in a PDF like in any text view: press and hold on a word, drag the two handles to select more or less (a magnifier bubble floats above while you drag, on Android 9 and newer), tap elsewhere to clear. A small menu offers Select all (the page's text), Share and Copy. **Android 15 and newer only** (uses Android's built-in PDF text support; older phones keep the plain viewer). No scanned-image text. | Implemented, **not yet tested on a device** |
 | Text search, selecting across pages, password-protected PDFs | Not implemented |
-| Annotate / edit PDFs | Not implemented (planned) |
+| Sign a PDF: tap the pen in the reading bar, draw your signature once (kept on the phone for reuse), drag and resize it on the page with the round handle, tick to place it (repeat for more places), then Save: **Save as new copy** (you choose where) or **Replace original**. The signature is added on top of the real page with the PdfBox-Android library (Apache-2.0), so text stays selectable. Replacing checks the result first and restores the original if the write fails; a file another app only let Documents read can't be replaced (use a new copy). A picture of a signature, not a cryptographic one. Password-protected PDFs can't be edited | Implemented; placement, page-rotation and file-name maths have unit tests; **the PdfBox writing and all screens are not tested on a device**, and the writing code is only checked by the build |
+| Other annotations (highlight, text, drawing) | Not implemented (planned) |
 | Word (.doc/.docx) viewing and editing | Not implemented (planned) |
 
 The Android SDK isn't available where this was written, so GitHub Actions is the only build

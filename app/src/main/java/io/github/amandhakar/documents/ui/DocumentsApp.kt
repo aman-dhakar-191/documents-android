@@ -9,13 +9,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,19 +33,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.amandhakar.documents.DocumentViewModel
+import io.github.amandhakar.documents.EditViewModel
 import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
+import io.github.amandhakar.documents.edit.PageRow
+import io.github.amandhakar.documents.edit.SaveNames
+import io.github.amandhakar.documents.edit.VisiblePage
 import io.github.amandhakar.documents.library.MultiSelect
 import io.github.amandhakar.documents.share.ShareFiles
 import kotlin.math.roundToInt
@@ -53,20 +66,27 @@ fun DocumentsApp(
     onExit: () -> Unit,
     viewModel: DocumentViewModel = viewModel(),
     libraryViewModel: LibraryViewModel = viewModel(),
+    editViewModel: EditViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val libraryState by libraryViewModel.state.collectAsState()
     val selectedIds by libraryViewModel.selected.collectAsState()
+    val edit by editViewModel.state.collectAsState()
     val context = LocalContext.current
     var zoom by rememberSaveable { mutableStateOf(1f) }
     // Lives here (not in the library screen) so the list keeps its scroll position after reading a PDF.
     val gridState = rememberLazyGridState()
+    // Shared with the page list so Sign can tell which page is showing.
+    val pageListState = rememberLazyListState()
+    var askSaveChoice by rememberSaveable { mutableStateOf(false) }
+    var askDiscard by rememberSaveable { mutableStateOf(false) }
 
     // True while the PDF on screen was opened by another app: Back then returns to that app.
     var openedFromOutside by rememberSaveable { mutableStateOf(false) }
 
     fun openOurselves(uri: Uri) {
         openedFromOutside = false
+        editViewModel.clearEdits()
         viewModel.open(uri)
     }
 
@@ -77,6 +97,7 @@ fun DocumentsApp(
         if (incoming != null) {
             openedFromOutside = true
             libraryViewModel.clearSelection()
+            editViewModel.clearEdits()
             viewModel.open(incoming.uri)
         }
     }
@@ -87,13 +108,45 @@ fun DocumentsApp(
         zoom = 1f
         openedFromOutside = false
     }
-    val goBack: () -> Unit = {
+    val leaveViewer: () -> Unit = {
+        editViewModel.clearEdits()
         when (BackNavigation.fromViewer(openedFromOutside)) {
             BackTarget.ExitApp -> onExit() // the document is closed when the screen is destroyed
             BackTarget.Library -> toLibrary()
         }
     }
+    // Back while placing a signature just stops placing; with unsaved signatures it asks first.
+    val goBack: () -> Unit = {
+        when {
+            edit.placing != null -> editViewModel.cancelPlacing()
+            edit.placed.isNotEmpty() -> askDiscard = true
+            else -> leaveViewer()
+        }
+    }
     BackHandler(enabled = !inLibrary, onBack = goBack)
+
+    val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { target ->
+        val source = viewModel.openUri()
+        if (target != null && source != null) {
+            editViewModel.save(source, target) { saved -> if (saved) openOurselves(target) }
+        }
+    }
+    LaunchedEffect(edit.message) {
+        edit.message?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            editViewModel.messageShown()
+        }
+    }
+    // The page showing the most on screen: the one a new signature goes on.
+    fun visiblePage(): Int {
+        val info = pageListState.layoutInfo
+        val rows = info.visibleItemsInfo.map { PageRow(it.index, it.offset, it.size) }
+        return VisiblePage.mostVisible(rows, info.viewportEndOffset - info.viewportStartOffset) ?: 0
+    }
+    val sign: () -> Unit = {
+        if (edit.signature == null) editViewModel.openPad() else editViewModel.startPlacing(visiblePage(), A4_ASPECT)
+    }
+    val signatureImage = remember(edit.signature) { edit.signature?.asImageBitmap() }
 
     // Choosing PDFs in the list: Back (or Cancel) unticks everything instead of leaving.
     val selectionActive = inLibrary && selectedIds.isNotEmpty()
@@ -115,6 +168,57 @@ fun DocumentsApp(
     }
 
     MaterialTheme {
+        if (edit.padOpen) {
+            SignaturePadDialog(
+                onDone = { bitmap ->
+                    val wasPlacing = edit.placing != null
+                    editViewModel.signatureDrawn(bitmap)
+                    // Drawing again while placing keeps the spot; a first signature goes straight onto the page.
+                    if (!wasPlacing) editViewModel.startPlacing(visiblePage(), A4_ASPECT)
+                },
+                onCancel = { editViewModel.closePad() },
+            )
+        }
+        if (askSaveChoice) {
+            AlertDialog(
+                onDismissRequest = { askSaveChoice = false },
+                title = { Text("Save signed PDF") },
+                text = { Text("Save it as a new file, or replace this one? Replacing can't be undone.") },
+                confirmButton = {
+                    Button(onClick = {
+                        askSaveChoice = false
+                        saveCopy.launch(SaveNames.signedName(displayNameOf(context, viewModel.openUri())))
+                    }) { Text("Save as new copy") }
+                },
+                dismissButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { askSaveChoice = false }) { Text("Cancel") }
+                        TextButton(onClick = {
+                            askSaveChoice = false
+                            val source = viewModel.openUri()
+                            if (source != null) {
+                                viewModel.releaseForWrite()
+                                editViewModel.save(source, null) { viewModel.reopen() }
+                            }
+                        }) { Text("Replace original") }
+                    }
+                },
+            )
+        }
+        if (askDiscard) {
+            AlertDialog(
+                onDismissRequest = { askDiscard = false },
+                title = { Text("Discard signatures?") },
+                text = { Text("You haven't saved the signatures you added.") },
+                confirmButton = {
+                    Button(onClick = {
+                        askDiscard = false
+                        leaveViewer()
+                    }) { Text("Discard") }
+                },
+                dismissButton = { TextButton(onClick = { askDiscard = false }) { Text("Keep editing") } },
+            )
+        }
         Scaffold(
             topBar = {
                 if (selectionActive) {
@@ -138,13 +242,57 @@ fun DocumentsApp(
                     TopAppBar(
                         expandedHeight = 48.dp,
                         title = {},
-                        navigationIcon = { TextButton(onClick = goBack) { Text("Back") } },
+                        navigationIcon = {
+                            IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
+                        },
                         actions = {
                             if (state is ViewerState.Ready) {
-                                CompactButton("−", enabled = zoom > Zoom.MIN) { zoom = Zoom.zoomOut(zoom) }
-                                Text("${(zoom * 100).roundToInt()}%")
-                                CompactButton("+", enabled = zoom < Zoom.MAX) { zoom = Zoom.zoomIn(zoom) }
-                                TextButton(onClick = shareOpen) { Text("Share") }
+                                if (edit.placing != null) {
+                                    IconButton(onClick = { editViewModel.openPad() }) {
+                                        Icon(DocIcons.Edit, contentDescription = "Draw the signature again")
+                                    }
+                                    IconButton(onClick = { editViewModel.cancelPlacing() }) {
+                                        Icon(DocIcons.Close, contentDescription = "Cancel")
+                                    }
+                                    IconButton(onClick = { editViewModel.confirmPlacing() }) {
+                                        Icon(DocIcons.Check, contentDescription = "Place signature here")
+                                    }
+                                } else {
+                                    CompactButton("\u2212", enabled = zoom > Zoom.MIN) { zoom = Zoom.zoomOut(zoom) }
+                                    Text("${(zoom * 100).roundToInt()}%")
+                                    CompactButton("+", enabled = zoom < Zoom.MAX) { zoom = Zoom.zoomIn(zoom) }
+                                    IconButton(onClick = sign, enabled = !edit.saving) {
+                                        Icon(DocIcons.Edit, contentDescription = "Add signature")
+                                    }
+                                    if (edit.placed.isNotEmpty()) {
+                                        IconButton(onClick = { askSaveChoice = true }, enabled = !edit.saving) {
+                                            Icon(DocIcons.Save, contentDescription = "Save signed PDF")
+                                        }
+                                    }
+                                    var menuOpen by remember { mutableStateOf(false) }
+                                    IconButton(onClick = { menuOpen = true }) {
+                                        Icon(DocIcons.MoreVert, contentDescription = "More options")
+                                    }
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text("Share") },
+                                            leadingIcon = { Icon(DocIcons.Share, contentDescription = null) },
+                                            onClick = {
+                                                menuOpen = false
+                                                shareOpen()
+                                            },
+                                        )
+                                        if (edit.placed.isNotEmpty()) {
+                                            DropdownMenuItem(
+                                                text = { Text("Undo last signature") },
+                                                onClick = {
+                                                    menuOpen = false
+                                                    editViewModel.undoLast()
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         },
                     )
@@ -162,7 +310,27 @@ fun DocumentsApp(
                     is ViewerState.Error -> Message(s.message) {
                         Button(onClick = toLibrary) { Text("Back to my PDFs") }
                     }
-                    is ViewerState.Ready -> PageList(document = s.document, zoom = zoom, onZoomChange = { zoom = it })
+                    is ViewerState.Ready -> {
+                        val image = signatureImage
+                        PageList(
+                            document = s.document,
+                            zoom = zoom,
+                            onZoomChange = { zoom = it },
+                            listState = pageListState,
+                            editing = if (image != null && edit.signature != null) {
+                                EditingUi(
+                                    signature = image,
+                                    aspect = edit.signature!!.width.toFloat() / edit.signature!!.height,
+                                    placed = edit.placed,
+                                    placing = edit.placing,
+                                    onPlacingChange = { editViewModel.updatePlacing(it) },
+                                )
+                            } else {
+                                null
+                            },
+                        )
+                        if (edit.saving) CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    }
                 }
             }
         }
@@ -191,3 +359,18 @@ internal fun Message(text: String, action: @Composable () -> Unit) {
         action()
     }
 }
+
+/** The file's display name (for suggesting a name for the signed copy), or null when it can't be read. */
+private fun displayNameOf(context: android.content.Context, uri: Uri?): String? {
+    if (uri == null) return null
+    return try {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: uri.lastPathSegment
+    } catch (e: Exception) {
+        uri.lastPathSegment
+    }
+}
+
+/** Width / height of a typical portrait page, used to place a new signature before the page's real shape is needed. */
+private const val A4_ASPECT = 1f / 1.414f

@@ -54,6 +54,21 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Closes the open document so its file can be overwritten. Follow it with [reopen]. */
+    fun releaseForWrite() {
+        job?.cancel()
+        job = null
+        closeCurrent()
+        _state.value = ViewerState.Loading
+    }
+
+    /** Opens the current document again (after it was changed on disk). */
+    fun reopen() {
+        val uri = currentUri ?: return
+        currentUri = null
+        open(uri)
+    }
+
     /** The address of the document being read or loading, or null when none is open. */
     fun openUri(): Uri? = currentUri
 
