@@ -71,7 +71,7 @@ import io.github.amandhakar.documents.library.PdfFiles
 import io.github.amandhakar.documents.library.StorageAccess
 import io.github.amandhakar.documents.library.Thumbnails
 
-/** Every PDF and web page on the phone as a card (PDFs with a first-page preview), with chips to filter by kind. Tap a card to open it. */
+/** Every PDF, Word file and web page on the phone as a card (PDFs with a first-page preview), with chips to filter by kind. Tap a card to open it. */
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
@@ -105,7 +105,7 @@ fun LibraryScreen(
         }
         LibraryState.NeedsPermission -> Message(
             "To show your files here, Documents needs permission to see the files on your phone. " +
-                "It only looks for PDF files and web pages, and nothing leaves your phone. " +
+                "It only looks for PDF, Word and web page files, and nothing leaves your phone. " +
                 "You can still open a single file with Browse without giving this permission.",
         ) {
             Button(onClick = {
@@ -285,12 +285,13 @@ private fun SelectBadge(selected: Boolean, modifier: Modifier = Modifier) {
 
 @Composable
 private fun Thumbnail(file: PdfFile, modifier: Modifier) {
-    if (file.format == DocumentFormat.Html) {
-        // A web page has no first page to show: a globe and its type instead.
+    if (file.format != DocumentFormat.Pdf) {
+        // A web page or Word file has no first page to show: an icon and its type instead.
+        val (icon, label) = if (file.format == DocumentFormat.Docx) DocIcons.Description to "Word" else DocIcons.Public to "Web page"
         Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(DocIcons.Public, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("Web page", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(icon, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         return

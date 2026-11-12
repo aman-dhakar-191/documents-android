@@ -15,6 +15,11 @@ class PdfFilesTest {
         assertEquals("a.b", PdfFiles.title("a.b.pdf"))
     }
 
+    @Test fun titleDropsWordExtension() {
+        assertEquals("Letter", PdfFiles.title("Letter.docx"))
+        assertEquals("Letter", PdfFiles.title("Letter.DOCX"))
+    }
+
     @Test fun titleDropsWebPageExtensions() {
         assertEquals("page", PdfFiles.title("page.html"))
         assertEquals("page", PdfFiles.title("page.HTM"))

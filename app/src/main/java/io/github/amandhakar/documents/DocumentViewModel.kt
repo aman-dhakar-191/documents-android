@@ -8,6 +8,9 @@ import io.github.amandhakar.documents.document.Document
 import io.github.amandhakar.documents.document.DocumentFormat
 import io.github.amandhakar.documents.document.DocumentOpener
 import io.github.amandhakar.documents.document.UnsupportedFormatException
+import io.github.amandhakar.documents.word.DocxDocument
+import io.github.amandhakar.documents.word.DocxException
+import io.github.amandhakar.documents.word.DocxParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -26,6 +29,9 @@ sealed interface ViewerState {
 
     /** A web page (.html), shown by its own screen rather than as pages. */
     data class Web(val uri: Uri) : ViewerState
+
+    /** A Word file (.docx), already read, shown by its own reading view. */
+    data class Docx(val uri: Uri, val document: DocxDocument) : ViewerState
 }
 
 class DocumentViewModel(app: Application) : AndroidViewModel(app) {
@@ -46,6 +52,21 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
             val format = withContext(Dispatchers.IO) { runCatching { DocumentOpener.formatOf(getApplication(), uri) }.getOrNull() }
             if (format == DocumentFormat.Html) {
                 if (isActive) _state.value = ViewerState.Web(uri)
+                return@launch
+            }
+            if (format == DocumentFormat.Docx) {
+                val read = withContext(Dispatchers.IO) {
+                    runCatching {
+                        getApplication<Application>().contentResolver.openInputStream(uri)?.use { DocxParser.parse(it) }
+                            ?: throw IOException("Could not read $uri")
+                    }
+                }
+                if (isActive) {
+                    _state.value = read.fold(
+                        onSuccess = { ViewerState.Docx(uri, it) },
+                        onFailure = { ViewerState.Error(messageFor(it)) },
+                    )
+                }
                 return@launch
             }
             // NonCancellable so a document that finished opening is never leaked if we're cancelled.
@@ -99,7 +120,9 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun messageFor(error: Throwable): String = when (error) {
-        is UnsupportedFormatException -> "This file type isn't supported yet. Only PDF files and web pages (.html) can be opened."
+        is DocxException -> error.message ?: "This Word file couldn't be opened."
+        is OutOfMemoryError -> "This document is too big to open on this phone."
+        is UnsupportedFormatException -> "This file type isn't supported yet. Only PDF files, Word files (.docx) and web pages (.html) can be opened."
         is SecurityException -> "Couldn't open this file. It may be password-protected, which isn't supported yet."
         is IOException -> "Couldn't open this file. It may be damaged or not a valid PDF."
         else -> "Something went wrong opening this file."

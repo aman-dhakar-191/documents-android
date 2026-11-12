@@ -83,6 +83,8 @@ differ), and big pictures (memory). [Certain]
 
 ## Phase 6: Word (.docx)
 
+**Status: stage 1 (reading view) implemented, using the app's own zip + XML code and no library (owner asked for Word; own code is the assumed choice until told otherwise). Stages 2 to 5 not started.**
+
 **Reality check:** [Certain] `.docx` is also OOXML (zip plus XML). Unlike a PDF, a Word file stores real paragraphs and
 runs, so **editing text is far easier than in PDF**. What is hard is **page-faithful layout**: pagination, floating
 images, text wrapping around them, headers and footers, fields, footnotes and sections. [Certain]
