@@ -56,7 +56,8 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     page) and writes the new text over it in Helvetica, shrunk down to 60% to fit. **The old text is covered, not
     erased: it is still in the file** (searchable, copyable), so this must not be used to hide sensitive
     information. Limits: Latin letters, digits and common symbols only (no Hindi or emoji yet); text colour is
-    always black and the font is not matched; rotated pages and scans (no text) are not supported. Stage 2: **Add text** puts a new
+    copied from the old text (the pixel furthest from the background; black if none stands out) but the font is not
+    matched; rotated pages and scans (no text) are not supported. Stage 2: **Add text** puts a new
     piece of text anywhere: it is typed, then dragged and resized (the width chosen sets the font size) like the
     signature, and written as real Helvetica text on Save (same character limits as above, black, one line, at
     most 200 characters; rotated pages not supported). Stage 3: **Highlight** (tap a line, tap

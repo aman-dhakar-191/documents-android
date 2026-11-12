@@ -100,4 +100,29 @@ class TextLinesTest {
         assertEquals(20f / 800f, a.baseline, 1e-6f)
         assertNotNull(a)
     }
+
+    @Test fun textColourIsTheFurthestPixelFromTheBackground() {
+        val white = 0xFFFFFFFF.toInt()
+        val blue = 0xFF1A237E.toInt()
+        val pixels = intArrayOf(white, 0xFFE0E0F0.toInt(), blue, white)
+        assertEquals(blue, ColorSample.textColor(pixels, white))
+    }
+
+    @Test fun whiteTextOnADarkBoxIsWhite() {
+        val dark = 0xFF202020.toInt()
+        assertEquals(0xFFFFFFFF.toInt(), ColorSample.textColor(intArrayOf(dark, 0xFFFFFFFF.toInt(), dark), dark))
+    }
+
+    @Test fun whenNothingStandsOutTheTextIsBlack() {
+        val white = 0xFFFFFFFF.toInt()
+        assertEquals(0xFF000000.toInt(), ColorSample.textColor(intArrayOf(white, 0xFFF8F8F8.toInt()), white))
+        assertEquals(0xFF000000.toInt(), ColorSample.textColor(IntArray(0), white))
+    }
+
+    @Test fun theEditKeepsTheInkColour() {
+        val page = PageLines(600f, 800f, lines)
+        val blue = 0xFF1A237E.toInt()
+        assertEquals(blue, TextEdit.forLine(0, page, lines[0], "x", 0xFFFFFFFF.toInt(), blue).ink)
+        assertEquals(0xFF000000.toInt(), TextEdit.forLine(0, page, lines[0], "x", 0xFFFFFFFF.toInt()).ink)
+    }
 }

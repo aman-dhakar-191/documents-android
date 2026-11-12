@@ -44,13 +44,15 @@ data class TextEdit(
     val pageWidthPt: Float,
     val text: String,
     val cover: Int,
+    /** The colour of the old text, used for the new text (black when it couldn't be told). */
+    val ink: Int = 0xFF000000.toInt(),
 ) {
     /** True when [other] covers the same original line (so a new edit replaces this one). */
     fun sameLineAs(other: TextEdit): Boolean =
         page == other.page && kotlin.math.abs(left - other.left) < 0.002f && kotlin.math.abs(top - other.top) < 0.002f
 
     companion object {
-        fun forLine(page: Int, page0: PageLines, line: TextLine, text: String, cover: Int): TextEdit = TextEdit(
+        fun forLine(page: Int, page0: PageLines, line: TextLine, text: String, cover: Int, ink: Int = 0xFF000000.toInt()): TextEdit = TextEdit(
             page = page,
             left = line.left / page0.widthPt,
             top = line.top / page0.heightPt,
@@ -61,6 +63,7 @@ data class TextEdit(
             pageWidthPt = page0.widthPt,
             text = text,
             cover = cover,
+            ink = ink,
         )
     }
 }
@@ -145,6 +148,31 @@ object PdfText {
 }
 
 object ColorSample {
+    private const val BLACK = 0xFF000000.toInt()
+
+    /** Colours closer than this to the background (sum of squared channel differences) count as the background. */
+    private const val MIN_DISTANCE_SQUARED = 90 * 90
+
+    /**
+     * The colour of the text in [pixels] (ARGB ints from inside a line's box) on [background]: the pixel furthest from the
+     * background colour. Black when no pixel stands out (nothing to go on).
+     */
+    fun textColor(pixels: IntArray, background: Int): Int {
+        var best = BLACK
+        var bestDistance = -1
+        for (p in pixels) {
+            val dr = ((p shr 16) and 0xFF) - ((background shr 16) and 0xFF)
+            val dg = ((p shr 8) and 0xFF) - ((background shr 8) and 0xFF)
+            val db = (p and 0xFF) - (background and 0xFF)
+            val distance = dr * dr + dg * dg + db * db
+            if (distance > bestDistance) {
+                bestDistance = distance
+                best = (0xFF shl 24) or (p and 0x00FFFFFF)
+            }
+        }
+        return if (bestDistance < MIN_DISTANCE_SQUARED) BLACK else best
+    }
+
     /** The average of [colors] (ARGB ints) as an opaque colour; white when there are none. */
     fun average(colors: List<Int>): Int {
         if (colors.isEmpty()) return 0xFFFFFFFF.toInt()
