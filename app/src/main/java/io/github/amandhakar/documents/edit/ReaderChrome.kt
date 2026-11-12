@@ -35,4 +35,26 @@ object ReaderChrome {
 
     /** The zoom label, e.g. 1.25 -> "125%". */
     fun zoomLabel(zoom: Float): String = "${Math.round(zoom * 100)}%"
+
+    private fun counted(n: Int, one: String, many: String): String? = when {
+        n <= 0 -> null
+        n == 1 -> "1 $one"
+        else -> "$n $many"
+    }
+
+    /** What Save would write, in words: "1 signature and 2 text changes". */
+    fun changeSummary(signatures: Int, textEdits: Int, newTexts: Int, marks: Int): String {
+        val parts = listOfNotNull(
+            counted(signatures, "signature", "signatures"),
+            counted(textEdits, "text change", "text changes"),
+            counted(newTexts, "added text", "added texts"),
+            counted(marks, "highlight or drawing", "highlights or drawings"),
+        )
+        return when (parts.size) {
+            0 -> "No changes"
+            1 -> parts[0]
+            2 -> "${parts[0]} and ${parts[1]}"
+            else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
+        }
+    }
 }

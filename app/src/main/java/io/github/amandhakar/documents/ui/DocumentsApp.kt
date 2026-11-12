@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.amandhakar.documents.edit.ReaderChrome
+import io.github.amandhakar.documents.web.WebNotice
 import io.github.amandhakar.documents.edit.ReaderTool
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.amandhakar.documents.DocumentViewModel
@@ -202,42 +203,24 @@ fun DocumentsApp(
             )
         }
         if (askSaveChoice) {
-            AlertDialog(
-                onDismissRequest = { askSaveChoice = false },
-                title = { Text("Save signed PDF") },
-                text = {
-                    Column {
-                        Text("Save it as a new file, or replace this one? Replacing can't be undone.")
-                        if (edit.textEdits.isNotEmpty()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = eraseOld, onCheckedChange = { eraseOld = it })
-                                Text(
-                                    "Also remove the old text from the file, not just cover it (experimental)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        }
+            SaveSheet(
+                summary = ReaderChrome.changeSummary(edit.placed.size, edit.textEdits.size, edit.placedTexts.size, edit.marks.size),
+                showErase = edit.textEdits.isNotEmpty(),
+                eraseOld = eraseOld,
+                onEraseChange = { eraseOld = it },
+                onSaveCopy = {
+                    askSaveChoice = false
+                    saveCopy.launch(SaveNames.signedName(displayNameOf(context, viewModel.openUri())))
+                },
+                onReplace = {
+                    askSaveChoice = false
+                    val source = viewModel.openUri()
+                    if (source != null) {
+                        viewModel.releaseForWrite()
+                        editViewModel.save(source, null, eraseOld) { viewModel.reopen() }
                     }
                 },
-                confirmButton = {
-                    Button(onClick = {
-                        askSaveChoice = false
-                        saveCopy.launch(SaveNames.signedName(displayNameOf(context, viewModel.openUri())))
-                    }) { Text("Save as new copy") }
-                },
-                dismissButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { askSaveChoice = false }) { Text("Cancel") }
-                        TextButton(onClick = {
-                            askSaveChoice = false
-                            val source = viewModel.openUri()
-                            if (source != null) {
-                                viewModel.releaseForWrite()
-                                editViewModel.save(source, null, eraseOld) { viewModel.reopen() }
-                            }
-                        }) { Text("Replace original") }
-                    }
-                },
+                onDismiss = { askSaveChoice = false },
             )
         }
         edit.editingLine?.let { target ->
@@ -290,62 +273,12 @@ fun DocumentsApp(
             )
         }
         if (askNewText) {
-            var typed by remember { mutableStateOf("") }
-            var matchNearby by remember { mutableStateOf(true) }
-            var newFont by remember { mutableStateOf(io.github.amandhakar.documents.edit.FontStyleChoice()) }
-            val unusable = PdfText.unsupported(TextBoxMath.prepare(typed))
-            AlertDialog(
-                onDismissRequest = { askNewText = false },
-                title = { Text("Add text") },
-                text = {
-                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = typed,
-                        onValueChange = { typed = it },
-                        label = { Text("Text") },
-                        isError = unusable.isNotEmpty(),
-                        supportingText = {
-                            Text(
-                                if (unusable.isEmpty()) {
-                                    "Then drag it onto a page and resize it."
-                                } else {
-                                    "Can't use ${unusable.joinToString(" ")} yet: only Latin letters, digits and common symbols."
-                                },
-                            )
-                        },
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = matchNearby, onCheckedChange = { matchNearby = it })
-                        Text(
-                            "Match the text nearby (font, size and colour) where you drop it",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (!matchNearby) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            for ((family, label) in listOf(
-                                FontFamilyChoice.Sans to "Sans",
-                                FontFamilyChoice.Serif to "Serif",
-                                FontFamilyChoice.Mono to "Mono",
-                            )) {
-                                ChoiceButton(label, newFont.family == family) { newFont = newFont.copy(family = family) }
-                            }
-                            ChoiceButton("B", newFont.bold) { newFont = newFont.copy(bold = !newFont.bold) }
-                            ChoiceButton("I", newFont.italic) { newFont = newFont.copy(italic = !newFont.italic) }
-                        }
-                    }
-                  }
+            AddTextSheet(
+                onAdd = { text, matchNearby, font ->
+                    askNewText = false
+                    editViewModel.startPlacingText(text, zoom, matchNearby, font)
                 },
-                confirmButton = {
-                    Button(
-                        enabled = unusable.isEmpty() && TextBoxMath.prepare(typed).isNotEmpty(),
-                        onClick = {
-                            askNewText = false
-                            editViewModel.startPlacingText(typed, zoom, matchNearby, newFont)
-                        },
-                    ) { Text("Add") }
-                },
-                dismissButton = { TextButton(onClick = { askNewText = false }) { Text("Cancel") } },
+                onDismiss = { askNewText = false },
             )
         }
         if (askDiscard) {
@@ -390,6 +323,14 @@ fun DocumentsApp(
                             IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
                         },
                         actions = {
+                            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                Text(
+                                    WebNotice.scriptsChip(allowScripts),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                )
+                            }
                             var menuOpen by remember { mutableStateOf(false) }
                             IconButton(onClick = { menuOpen = true }) {
                                 Icon(DocIcons.MoreVert, contentDescription = "More options")
@@ -642,7 +583,7 @@ private fun displayNameOf(context: android.content.Context, uri: Uri?): String? 
 
 /** A small on/off button: filled when [selected], outlined otherwise. */
 @Composable
-private fun ChoiceButton(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ChoiceButton(label: String, selected: Boolean, onClick: () -> Unit) {
     val padding = PaddingValues(horizontal = 12.dp)
     if (selected) {
         Button(onClick = onClick, contentPadding = padding) { Text(label) }
