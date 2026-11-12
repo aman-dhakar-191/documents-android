@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.graphics.text.LineBreaker
 import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -158,7 +159,7 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
             else -> Layout.Alignment.ALIGN_NORMAL
         }
         val builder = StaticLayout.Builder.obtain(text, 0, text.length, paint, widthPt.toInt().coerceAtLeast(1)).setAlignment(alignment)
-        if (p.align == DocxAlign.Justify) builder.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD)
+        if (p.align == DocxAlign.Justify) builder.setJustificationMode(LineBreaker.JUSTIFICATION_MODE_INTER_WORD)
         return builder.build()
     }
 
