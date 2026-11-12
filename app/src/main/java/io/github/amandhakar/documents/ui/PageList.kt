@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -121,6 +122,8 @@ fun PageList(
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
     editing: EditingUi? = null,
+    /** Room left under the last page, e.g. for a floating bar. */
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     val currentZoom by rememberUpdatedState(zoom)
     val currentOnZoomChange by rememberUpdatedState(onZoomChange)
@@ -176,6 +179,7 @@ fun PageList(
                 state = listState,
                 modifier = Modifier.horizontalScroll(horizontal).width(contentWidth),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = bottomPadding),
             ) {
                 items(count = document.pageCount, key = { it }) { index ->
                     PageImage(
