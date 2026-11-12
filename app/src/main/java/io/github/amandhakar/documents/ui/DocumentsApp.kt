@@ -64,6 +64,7 @@ import io.github.amandhakar.documents.edit.PdfText
 import io.github.amandhakar.documents.edit.TextBoxMath
 import io.github.amandhakar.documents.edit.SaveNames
 import io.github.amandhakar.documents.library.MultiSelect
+import io.github.amandhakar.documents.web.WebDocumentScreen
 import io.github.amandhakar.documents.share.ShareFiles
 import kotlin.math.roundToInt
 
@@ -90,6 +91,8 @@ fun DocumentsApp(
     var askSaveChoice by rememberSaveable { mutableStateOf(false) }
     var askDiscard by rememberSaveable { mutableStateOf(false) }
     var askNewText by rememberSaveable { mutableStateOf(false) }
+    // Scripts in a web page are off until the person turns them on (per opening).
+    var allowScripts by rememberSaveable { mutableStateOf(false) }
     // Save also removes the old text under Change text edits (experimental), instead of only covering it.
     var eraseOld by rememberSaveable { mutableStateOf(false) }
 
@@ -98,6 +101,7 @@ fun DocumentsApp(
 
     fun openOurselves(uri: Uri) {
         openedFromOutside = false
+        allowScripts = false
         editViewModel.clearEdits()
         viewModel.open(uri)
     }
@@ -110,6 +114,7 @@ fun DocumentsApp(
             openedFromOutside = true
             libraryViewModel.clearSelection()
             editViewModel.clearEdits()
+            allowScripts = false
             viewModel.open(incoming.uri)
         }
     }
@@ -337,7 +342,30 @@ fun DocumentsApp(
                     TopAppBar(
                         title = { Text("Documents") },
                         actions = {
-                            TextButton(onClick = { picker.launch(arrayOf("application/pdf")) }) { Text("Browse") }
+                            TextButton(onClick = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml")) }) { Text("Browse") }
+                        },
+                    )
+                } else if (state is ViewerState.Web) {
+                    TopAppBar(
+                        expandedHeight = 48.dp,
+                        title = {},
+                        navigationIcon = {
+                            IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
+                        },
+                        actions = {
+                            var menuOpen by remember { mutableStateOf(false) }
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(DocIcons.MoreVert, contentDescription = "More options")
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (allowScripts) "Turn scripts off" else "Allow scripts on this page") },
+                                    onClick = {
+                                        menuOpen = false
+                                        allowScripts = !allowScripts
+                                    },
+                                )
+                            }
                         },
                     )
                 } else {
@@ -456,6 +484,7 @@ fun DocumentsApp(
                         onOpen = { openOurselves(it) },
                     )
                     ViewerState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    is ViewerState.Web -> WebDocumentScreen(uri = s.uri, allowScripts = allowScripts)
                     is ViewerState.Error -> Message(s.message) {
                         Button(onClick = toLibrary) { Text("Back to my PDFs") }
                     }

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.amandhakar.documents.document.Document
+import io.github.amandhakar.documents.document.DocumentFormat
 import io.github.amandhakar.documents.document.DocumentOpener
 import io.github.amandhakar.documents.document.UnsupportedFormatException
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,9 @@ sealed interface ViewerState {
     data object Loading : ViewerState
     data class Error(val message: String) : ViewerState
     data class Ready(val document: Document) : ViewerState
+
+    /** A web page (.html), shown by its own screen rather than as pages. */
+    data class Web(val uri: Uri) : ViewerState
 }
 
 class DocumentViewModel(app: Application) : AndroidViewModel(app) {
@@ -39,6 +43,11 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         closeCurrent()
         _state.value = ViewerState.Loading
         job = viewModelScope.launch {
+            val format = withContext(Dispatchers.IO) { runCatching { DocumentOpener.formatOf(getApplication(), uri) }.getOrNull() }
+            if (format == DocumentFormat.Html) {
+                if (isActive) _state.value = ViewerState.Web(uri)
+                return@launch
+            }
             // NonCancellable so a document that finished opening is never leaked if we're cancelled.
             val result = withContext(Dispatchers.IO + NonCancellable) {
                 runCatching { DocumentOpener.open(getApplication(), uri) }
@@ -90,7 +99,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun messageFor(error: Throwable): String = when (error) {
-        is UnsupportedFormatException -> "This file type isn't supported yet. Only PDF files can be opened."
+        is UnsupportedFormatException -> "This file type isn't supported yet. Only PDF files and web pages (.html) can be opened."
         is SecurityException -> "Couldn't open this file. It may be password-protected, which isn't supported yet."
         is IOException -> "Couldn't open this file. It may be damaged or not a valid PDF."
         else -> "Something went wrong opening this file."

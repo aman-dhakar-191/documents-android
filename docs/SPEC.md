@@ -72,13 +72,23 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
     covered) for rotated pages, vertical text, text inside forms, or any content it can't match exactly, and
     says which pages. Text drawn as outlines or as an image can't be removed.
 
+11. **Web pages (.html).** Opened in Android's `WebView` (part of the system, no library) on a screen of its own, since a
+    page isn't a stack of pictures. The page is untrusted: scripts are off unless the person allows them for that
+    opening; file and content access, DOM storage, pop-ups, downloads and location are off; the page's text is loaded
+    from the one opened file with no base address, so nothing next to it is found. **No INTERNET permission was added**
+    and every online request (`http` / `https`) is refused and counted, with a note on screen ("N online parts were
+    blocked"). Tapping a web, mail or phone link asks first and then opens it outside the app; every other link kind is
+    blocked. Pages over 8 MB aren't opened. The owner confirmed this approach (remote parts blocked) in place of asking for
+    the internet permission. Intent filters only match local `content:` / `file:` addresses, so the app does not take
+    over links to websites. Not yet: library cards for web pages, save as PDF, find in page, share.
+
 ## Phases
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | View PDFs: library of all PDFs as cards with previews, picker (Browse), open-with, scroll, button and pinch zoom, error states, CI, signed releases | In progress (v0.1.0 released; library and pinch zoom not yet device-tested) |
 | 2 | Better viewing: text selection on Android 15+ (built in, no library), then remember last page, password-protected PDFs, text search (search is in the same Android 15 API; older phones would need a third-party library: check licence, e.g. MuPDF is AGPL) | Text selection implemented, not device-tested; rest not started |
 | 3 | PDF annotation / editing: signature first (draw, place, save as new or replace), via PdfBox-Android | Signature implemented and working on the owner's phone; text change (cover and retype) implemented, not device-tested; removing old text, new text boxes and other annotations not started |
-| 4 | Web pages (.html / .htm): safe offline viewer, save as PDF | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
+| 4 | Web pages (.html / .htm / .xhtml): safe offline viewer (done), library cards, save as PDF (not started) | Viewer implemented, not device-tested; the rest per [ROADMAP.md](ROADMAP.md) |
 | 5 | PowerPoint (.pptx) viewing, then editing | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
 | 6 | Word (.docx) viewing, then editing | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
 

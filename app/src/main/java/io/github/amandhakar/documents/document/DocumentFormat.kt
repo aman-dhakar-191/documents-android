@@ -1,11 +1,12 @@
 package io.github.amandhakar.documents.document
 
 /**
- * File formats the app can open. Only PDF is implemented; add an entry here (plus a [Document]
- * implementation and a branch in [DocumentOpener]) when another format is added.
+ * File formats the app can open: PDF (pages shown as pictures, see [Document]) and web pages (shown by their own
+ * screen, not as pages). Add an entry here when another format is added.
  */
 enum class DocumentFormat {
-    Pdf;
+    Pdf,
+    Html;
 
     companion object {
         /** Returns the format for a MIME type (parameters like "; charset=x" are ignored), or null if unsupported. */
@@ -13,6 +14,7 @@ enum class DocumentFormat {
             val base = mimeType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
             return when (base) {
                 "application/pdf" -> Pdf
+                "text/html", "application/xhtml+xml" -> Html
                 else -> null
             }
         }
@@ -22,6 +24,7 @@ enum class DocumentFormat {
             val ext = name?.substringAfterLast('.', missingDelimiterValue = "")?.lowercase().orEmpty()
             return when (ext) {
                 "pdf" -> Pdf
+                "html", "htm", "xhtml" -> Html
                 else -> null
             }
         }
