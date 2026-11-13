@@ -36,8 +36,8 @@ data class DocxParagraph(
 /** Rows of cells; each cell holds blocks (paragraphs, or even another table). */
 data class DocxTable(val rows: List<List<List<DocxBlock>>>) : DocxBlock
 
-/** A picture. [bytes] is the original png / jpeg / gif / bmp / webp file. */
-class DocxImage(val name: String, val bytes: ByteArray) : DocxBlock
+/** A picture. [bytes] is the original png / jpeg / gif / bmp / webp file. [pageBreakBefore] starts it on a new page. */
+class DocxImage(val name: String, val bytes: ByteArray, val pageBreakBefore: Boolean = false) : DocxBlock
 
 /** The paper: size and margins in points (72 to the inch). Defaults to A4 with 2.54 cm (1 inch) margins. */
 data class PageSetup(

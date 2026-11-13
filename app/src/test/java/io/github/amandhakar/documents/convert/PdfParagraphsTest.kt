@@ -265,7 +265,8 @@ class PdfToOfficeTest {
     @Test fun picturesBecomeOnePictureBlockEachInWord() {
         val doc = PdfParagraphs.picturesToDocx(listOf(byteArrayOf(1), byteArrayOf(2)), 595f, 842f)
         assertEquals(2, doc.blocks.filterIsInstance<DocxImage>().size)
-        assertEquals(18f, doc.page.marginLeftPt, 0f)
+        assertEquals(24f, doc.page.marginLeftPt, 0f)
+        assertEquals(listOf(false, true), doc.blocks.filterIsInstance<DocxImage>().map { it.pageBreakBefore })
     }
 
     @Test fun powerPointGetsOneSlidePerPageAtThePageSize() {

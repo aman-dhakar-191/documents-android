@@ -108,6 +108,24 @@ class DocxWriterTest {
         assertEquals(PNG.toList(), image.bytes.toList())
     }
 
+    @Test fun picturePagesComeBackAsPicturesOnly_noEmptyParagraphsBetween() {
+        val doc = PdfParagraphs.picturesToDocx(listOf(PNG, PNG, PNG), 595f, 842f)
+        val back = roundTrip(doc)
+        assertEquals(3, back.blocks.size)
+        assertTrue(back.blocks.all { it is DocxImage })
+        assertEquals(listOf(false, true, true), back.blocks.map { (it as DocxImage).pageBreakBefore })
+        assertEquals(24f, back.page.marginTopPt, 0f)
+    }
+
+    @Test fun picturePagesAreThePagesOfTheOriginalWithNoExtraOnes() {
+        val big = ByteArray(32).also {
+            byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10).copyInto(it)
+            it[18] = 0x04; it[19] = 0xD8.toByte(); it[22] = 0x06; it[23] = 0xDA.toByte()
+        }
+        val back = roundTrip(PdfParagraphs.picturesToDocx(listOf(big, big, big, big), 595f, 842f))
+        assertEquals(4, io.github.amandhakar.documents.word.PageLayout.paginate(back).size)
+    }
+
     @Test fun twoPicturesKeepTheirOwnBytes() {
         val other = PNG.copyOf().also { it[23] = 60 }
         val images = roundTrip(DocxDocument(listOf(DocxImage("a", PNG), DocxImage("b", other)))).blocks.filterIsInstance<DocxImage>()

@@ -170,6 +170,7 @@ object PageLayout {
         for (original in doc.blocks) {
             var block: DocxBlock? = original
             if (original is DocxParagraph && original.pageBreakBefore && current.isNotEmpty()) newPage()
+            if (original is DocxImage && original.pageBreakBefore && current.isNotEmpty()) newPage()
             var guard = 0
             while (block != null && guard++ < 10_000) {
                 val h = heightOf(block, page)

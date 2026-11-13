@@ -234,6 +234,7 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
     private fun image(image: DocxImage) {
         val bitmap = DocxImages.decode(image.bytes) ?: return
         try {
+            if (image.pageBreakBefore && pageHasContent()) newPage()
             val (w, h) = PageLayout.imageBoxPt(image, width, setup.contentHeightPt)
             if (y + h > bottom && pageHasContent()) newPage()
             val c = ensurePage()
