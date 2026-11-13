@@ -62,6 +62,7 @@ import io.github.amandhakar.documents.convert.ConvertException
 import io.github.amandhakar.documents.convert.ConvertOutcome
 import io.github.amandhakar.documents.convert.PdfConverter
 import io.github.amandhakar.documents.export.ExportNames
+import io.github.amandhakar.documents.export.WordTypefaces
 import io.github.amandhakar.documents.OfficeEditViewModel
 import io.github.amandhakar.documents.officeedit.DocxEditModel
 import io.github.amandhakar.documents.officeedit.OfficeEditMessages
@@ -243,7 +244,7 @@ fun DocumentsApp(
                         val stream = context.contentResolver.openOutputStream(target, "w") ?: throw java.io.IOException("Could not write")
                         stream.use { out ->
                             when (current) {
-                                is ViewerState.Docx -> WordPdfExporter.export(current.document, out)
+                                is ViewerState.Docx -> WordPdfExporter.export(current.document, out, WordTypefaces(context))
                                 is ViewerState.Pptx -> SlidesPdfExporter.export(current.deck, out)
                                 else -> Unit
                             }

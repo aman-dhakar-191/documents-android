@@ -13,6 +13,7 @@ import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.ForegroundColorSpan
+import android.text.style.LeadingMarginSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
@@ -25,8 +26,10 @@ import io.github.amandhakar.documents.word.DocxImage
 import io.github.amandhakar.documents.word.DocxImages
 import io.github.amandhakar.documents.word.DocxParagraph
 import io.github.amandhakar.documents.word.DocxTable
+import io.github.amandhakar.documents.word.LineSpacing
 import io.github.amandhakar.documents.word.PageLayout
 import io.github.amandhakar.documents.word.PageSetup
+import io.github.amandhakar.documents.word.WordFonts
 import io.github.amandhakar.documents.word.WordStyle
 import java.io.OutputStream
 import kotlin.math.roundToInt
@@ -38,10 +41,11 @@ import kotlin.math.roundToInt
  * match Word's exactly. Blocking: call from a background thread.
  */
 object WordPdfExporter {
-    fun export(doc: DocxDocument, out: OutputStream) {
+    /** [fonts] gives the bundled font for a look (see [WordTypefaces]); without it the phone's sans-serif is used. */
+    fun export(doc: DocxDocument, out: OutputStream, fonts: WordTypefaces? = null) {
         val pdf = PdfDocument()
         try {
-            val writer = PageWriter(pdf, doc.page)
+            val writer = PageWriter(pdf, doc.page, fonts)
             for (block in doc.blocks) writer.block(block)
             writer.finish(atLeastOnePage = true)
             pdf.writeTo(out)
@@ -54,7 +58,7 @@ object WordPdfExporter {
 private val InkColor = Color.rgb(0x1B, 0x1D, 0x22)
 private const val LABEL_WIDTH = PageLayout.LIST_INDENT
 
-private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
+private class PageWriter(val pdf: PdfDocument, val setup: PageSetup, val fonts: WordTypefaces?) {
     private var number = 0
     private var page: PdfDocument.Page? = null
     private var canvas: Canvas? = null
@@ -116,8 +120,11 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
         if (p.pageBreakBefore && pageHasContent()) newPage()
         ensurePage()
         val indent = PageLayout.indent(p)
-        val textLeft = left + indent
-        val textWidth = (width - indent).coerceAtLeast(36f)
+        // A hanging indent starts the first line left of the rest, so the whole text block starts there.
+        val first = PageLayout.firstLineIndent(p)
+        val hang = if (first < 0f) -first else 0f
+        val textLeft = left + indent - hang
+        val textWidth = (width - indent - PageLayout.rightIndent(p) + hang).coerceAtLeast(36f)
         if (pageHasContent()) y += PageLayout.spaceBefore(p)
         val layout = layoutOf(p, textWidth)
         val label = p.list?.label?.takeIf { it.isNotEmpty() }
@@ -134,7 +141,7 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
             text.append(run.text)
             val end = text.length
             if (end == start) continue
-            val size = if (p.headingLevel > 0) base else run.sizeHalfPoints?.let { it / 2f } ?: PageLayout.BODY_PT
+            val size = PageLayout.runPt(p, run)
             if (size != base) text.setSpan(RelativeSizeSpan(size / base), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             val bold = run.bold || p.headingLevel > 0
             val style = when {
@@ -143,17 +150,27 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
                 run.italic -> Typeface.ITALIC
                 else -> Typeface.NORMAL
             }
-            if (style != Typeface.NORMAL) text.setSpan(StyleSpan(style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (fonts != null) {
+                text.setSpan(FontSpan(fonts.get(WordFonts.faceFor(run.fontName ?: p.layout?.fontName), bold, run.italic)), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            } else if (style != Typeface.NORMAL) {
+                text.setSpan(StyleSpan(style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             if (run.underline) text.setSpan(UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             if (run.strike) text.setSpan(StrikethroughSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             WordStyle.readableColor(run.colorHex)?.let {
                 text.setSpan(ForegroundColorSpan(Color.parseColor("#$it")), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
+        val firstLine = PageLayout.firstLineIndent(p)
+        if (text.isNotEmpty() && firstLine != 0f) {
+            // First line pushed in (positive), or the rest pushed in under a hanging first line (negative).
+            val span = if (firstLine > 0f) LeadingMarginSpan.Standard(firstLine.toInt(), 0) else LeadingMarginSpan.Standard(0, (-firstLine).toInt())
+            text.setSpan(span, 0, text.length, Spanned.SPAN_INCLUSIVE_INCLUSIVE)
+        }
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = base
             color = InkColor
-            typeface = Typeface.SANS_SERIF
+            typeface = fonts?.get(PageLayout.faceOf(p), p.headingLevel > 0, false) ?: Typeface.SANS_SERIF
         }
         val alignment = when (p.align) {
             DocxAlign.Center -> Layout.Alignment.ALIGN_CENTER
@@ -162,6 +179,14 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
         }
         val builder = StaticLayout.Builder.obtain(text, 0, text.length, paint, widthPt.toInt().coerceAtLeast(1)).setAlignment(alignment)
         if (p.align == DocxAlign.Justify) builder.setJustificationMode(LineBreaker.JUSTIFICATION_MODE_INTER_WORD)
+        // The file's line spacing: a multiple of the font's own line height, or a fixed / minimum height in points.
+        val natural = base * WordFonts.lineHeightEm(PageLayout.faceOf(p))
+        when (val spacing = p.layout?.line) {
+            is LineSpacing.Multiple -> builder.setLineSpacing(0f, spacing.factor)
+            is LineSpacing.Exactly -> builder.setLineSpacing(spacing.pt - natural, 1f)
+            is LineSpacing.AtLeast -> builder.setLineSpacing(maxOf(0f, spacing.pt - natural), 1f)
+            null -> Unit
+        }
         return builder.build()
     }
 
@@ -191,7 +216,7 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
                 val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                     textSize = PageLayout.fontPt(p)
                     color = InkColor
-                    typeface = Typeface.SANS_SERIF
+                    typeface = fonts?.get(PageLayout.faceOf(p), p.headingLevel > 0, false) ?: Typeface.SANS_SERIF
                 }
                 c.drawText(label, x - LABEL_WIDTH, y + layout.getLineBaseline(0), paint)
             }
