@@ -43,6 +43,21 @@ class SaveNamesTest {
     @Test fun outOfMemoryIsExplained() =
         assertTrue(SaveNames.errorMessage(OutOfMemoryError(), replacing = false).contains("too big"))
 
-    @Test fun anythingElseSaysNothingWasChanged() =
+    @Test fun anythingElseSaysNothingWasChanged() {
         assertTrue(SaveNames.errorMessage(IllegalStateException("x"), replacing = true).contains("Nothing was changed"))
+    }
+
+    @Test fun anUnexpectedFailureSaysWhatItWas() {
+        val message = SaveNames.errorMessage(IllegalArgumentException("rotated pages can't be edited yet"), replacing = true)
+        assertTrue(message, message.contains("IllegalArgumentException: rotated pages can't be edited yet"))
+        assertTrue(SaveNames.errorMessage(NullPointerException(), replacing = false).contains("(NullPointerException)"))
+        assertTrue(SaveNames.errorMessage(IOException("disk full"), replacing = true).contains("IOException: disk full"))
+    }
+
+    @Test fun theDetailIsShortAndOnOneLine() {
+        val long = "a".repeat(500) + "\n" + "b".repeat(50)
+        val detail = SaveNames.detail(RuntimeException(long))
+        assertTrue(detail.length < 150)
+        assertTrue(!detail.contains('\n'))
+}
 }

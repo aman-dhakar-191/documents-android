@@ -25,8 +25,15 @@ object SaveNames {
             if (error.message?.contains("password", ignoreCase = true) == true) {
                 "Password-protected PDFs can't be edited yet."
             } else {
-                "Couldn't save the signed PDF. Nothing was changed."
+                "Couldn't save the signed PDF. Nothing was changed." + detail(error)
             }
-        else -> "Couldn't sign this PDF. Nothing was changed."
+        else -> "Couldn't change this PDF. Nothing was changed." + detail(error)
+    }
+
+    /** The kind of error and the start of its message, so a failure can be told apart (" (IllegalArgumentException: ...)"). */
+    fun detail(error: Throwable): String {
+        val kind = error.javaClass.simpleName.ifEmpty { "Error" }
+        val message = error.message.orEmpty().replace(Regex("\\s+"), " ").trim().take(90)
+        return if (message.isEmpty()) " ($kind)" else " ($kind: $message)"
     }
 }
