@@ -10,6 +10,9 @@ object XmlText {
         else -> true
     }
 
+    /** [text] without the characters XML forbids (control characters), so it is safe to put in a file. */
+    fun clean(text: String): String = text.filter { allowed(it) }
+
     fun escape(text: String): String {
         val sb = StringBuilder(text.length + 8)
         for (c in text) {
