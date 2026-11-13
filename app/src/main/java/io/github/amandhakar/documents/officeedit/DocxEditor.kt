@@ -112,7 +112,7 @@ object DocxEditor {
     // ---- the XML ----
 
     private fun changed(bytes: ByteArray, edits: DocxEdits): ByteArray {
-        val doc = parseXml(String(bytes, Charsets.UTF_8).removePrefix("﻿"))
+        val doc = parseXml(String(bytes, Charsets.UTF_8).removePrefix("\uFEFF"))
         val r = edits.resolved()
         val list = doc.getElementsByTagNameNS(W, "p")
         val paragraphs = (0 until list.length).map { list.item(it) as Element }

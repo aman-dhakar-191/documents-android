@@ -97,7 +97,7 @@ object PptxEditor {
     // ---- the XML ----
 
     private fun changed(bytes: ByteArray, edits: Map<Int, String>): ByteArray {
-        val doc = parseXml(String(bytes, Charsets.UTF_8).removePrefix("﻿"))
+        val doc = parseXml(String(bytes, Charsets.UTF_8).removePrefix("\uFEFF"))
         val list = doc.getElementsByTagNameNS(A, "p")
         val paragraphs = (0 until list.length).map { list.item(it) as Element }
         for ((id, text) in edits) {
