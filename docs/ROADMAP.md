@@ -85,6 +85,8 @@ differ), and big pictures (memory). [Certain]
 
 ## Phase 6: Word (.docx)
 
+**Update:** text editing for Word and PowerPoint is implemented at the owner's request (tap a paragraph, change it; Word also delete / add below; undo; save a copy or replace the original, verified by reading the result back). It is text only: no new slides, text boxes or tables, no reordering, no formatting tools, fields not editable. Compiled by CI, not run on a device. See the README status table.
+
 **Status: stage 1 implemented, using the app's own zip + XML code and no library (owner asked for Word; own code is the assumed choice until told otherwise): a reading view (A) and, at the owner's request, an approximate paginated page view (B, A4 by default). Stage 4 (export to PDF) implemented at the owner's request (with a real-measured page fill, so its breaks differ slightly from the on-screen estimate); stages 2, 3 and 5 not started.**
 
 **Reality check:** [Certain] `.docx` is also OOXML (zip plus XML). Unlike a PDF, a Word file stores real paragraphs and
