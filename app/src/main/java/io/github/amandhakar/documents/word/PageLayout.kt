@@ -139,12 +139,19 @@ object PageLayout {
 
     /** A picture's size on the page in points: its pixels at 96 per inch, no wider than the page's text and no taller than it. */
     fun imageBoxPt(image: DocxImage, widthPt: Float, heightPt: Float): Pair<Float, Float> {
-        val (pw, ph) = ImageSize.of(image.bytes) ?: (4 to 3)
-        var w = min(pw * 0.75f, widthPt)
-        var h = w * ph / pw
+        val declaredW = image.widthPt
+        val declaredH = image.heightPt
+        val (w0, h0) = if (declaredW != null && declaredH != null && declaredW >= 1f && declaredH >= 1f) {
+            declaredW to declaredH
+        } else {
+            val (pw, ph) = ImageSize.of(image.bytes) ?: (4 to 3)
+            pw * 0.75f to ph * 0.75f
+        }
+        var w = min(w0, widthPt)
+        var h = w * h0 / w0
         if (h > heightPt) {
             h = heightPt
-            w = h * pw / ph
+            w = h * w0 / h0
         }
         return w to h
     }
@@ -153,9 +160,15 @@ object PageLayout {
         is DocxParagraph -> spaceBefore(block) + lineCount(block, widthPt) * lineHeightPt(block) + spaceAfter(block)
         is DocxImage -> imageBoxPt(block, widthPt, page.contentHeightPt).second + 6f
         is DocxColumns -> 0f
+        is DocxFloat -> 0f
+        is DocxTextBox -> {
+            val boxWidth = min(block.widthPt ?: widthPt, widthPt)
+            TEXT_BOX_PADDING_PT * 2 + 4f + block.blocks.sumOf { heightOf(it, page, boxWidth - 2 * TEXT_BOX_PADDING_PT).toDouble() }.toFloat()
+        }
         is DocxTable -> TABLE_OUTER_PT + tableRowHeights(block, page, widthPt).sum()
     }
 
+    const val TEXT_BOX_PADDING_PT = 5f
     private const val TABLE_OUTER_PT = 8f
     private const val MIN_COLUMN_WIDTH_PT = 24f
 

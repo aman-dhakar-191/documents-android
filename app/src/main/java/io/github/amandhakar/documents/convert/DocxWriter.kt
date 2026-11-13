@@ -4,6 +4,8 @@ import io.github.amandhakar.documents.ooxml.XmlText
 import io.github.amandhakar.documents.word.DocxAlign
 import io.github.amandhakar.documents.word.DocxBlock
 import io.github.amandhakar.documents.word.DocxColumns
+import io.github.amandhakar.documents.word.DocxFloat
+import io.github.amandhakar.documents.word.DocxTextBox
 import io.github.amandhakar.documents.word.DocxDocument
 import io.github.amandhakar.documents.word.DocxImage
 import io.github.amandhakar.documents.word.DocxParagraph
@@ -116,6 +118,7 @@ object DocxWriter {
             is DocxParagraph -> paragraph(b, out, null)
             is DocxImage -> image(b, page, out, images)
             is DocxColumns -> Unit // written as section properties, see write()
+            is DocxFloat, is DocxTextBox -> Unit // the PDF conversion never makes these
             is DocxTable -> Unit // not written: see the class comment
         }
     }

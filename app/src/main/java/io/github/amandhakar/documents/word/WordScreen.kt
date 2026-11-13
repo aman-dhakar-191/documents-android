@@ -79,6 +79,10 @@ private fun BlockView(block: DocxBlock) {
         is DocxTable -> TableView(block)
         is DocxImage -> ImageView(block)
         is DocxColumns -> Unit // the reading view is one column
+        is DocxFloat -> Unit
+        is DocxTextBox -> Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).border(1.dp, PageLine).padding(8.dp)) {
+            for (inner in block.blocks) BlockView(inner)
+        }
     }
 }
 

@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -101,6 +103,8 @@ fun WordPagesScreen(document: DocxDocument, zoom: Float, modifier: Modifier = Mo
                             .padding(start = scale.dp(setup.marginLeftPt), end = scale.dp(setup.marginRightPt)),
                     ) {
                       CompositionLocalProvider(LocalPageInfo provides (index + 1 to pages.size)) {
+                        val floats = blocks.bands.flatMap { band -> band.columns.flatMap { it } }.filterIsInstance<DocxFloat>()
+                        for (f in floats) if (f.behind) FloatingPicture(f, setup, scale)
                         Column(Modifier.fillMaxWidth().padding(top = scale.dp(PageLayout.bodyTopPt(document, index)), bottom = scale.dp(PageLayout.bodyBottomPt(document, index)))) {
                             for (band in blocks.bands) {
                                 val count = band.columns.size
@@ -126,6 +130,7 @@ fun WordPagesScreen(document: DocxDocument, zoom: Float, modifier: Modifier = Mo
                                 for (block in footer) PageBlock(block, setup, scale)
                             }
                         }
+                        for (f in floats) if (!f.behind) FloatingPicture(f, setup, scale)
                       }
                     }
                     Text(
@@ -153,19 +158,75 @@ private fun PageBlock(block: DocxBlock, setup: PageSetup, scale: PageScale, widt
     when (block) {
         is DocxParagraph -> PageParagraph(block, scale)
         is DocxColumns -> Unit
+        is DocxFloat -> Unit // drawn on the page itself, see WordPagesScreen
+        is DocxTextBox -> PageTextBox(block, setup, scale, widthPt)
         is DocxTable -> PageTable(block, setup, scale, widthPt)
         is DocxImage -> {
             val bitmap by produceState<android.graphics.Bitmap?>(null, block) {
                 value = withContext(Dispatchers.Default) { DocxImages.decode(block.bytes) }
             }
             val (w, h) = PageLayout.imageBoxPt(block, widthPt, setup.contentHeightPt)
-            bitmap?.let {
-                Image(
-                    it.asImageBitmap(), contentDescription = "Picture in the document", contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(scale.dp(w), scale.dp(h)).padding(vertical = scale.dp(3f)),
-                )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = when (block.align) {
+                    DocxAlign.Center -> Arrangement.Center
+                    DocxAlign.End -> Arrangement.End
+                    else -> Arrangement.Start
+                },
+            ) {
+                bitmap?.let {
+                    Image(
+                        it.asImageBitmap(), contentDescription = "Picture in the document", contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(scale.dp(w), scale.dp(h)).padding(vertical = scale.dp(3f)),
+                    )
+                }
             }
         }
+    }
+}
+
+/** A text box, drawn in the flow where it is anchored: its paragraphs in a box with the file's line and fill. */
+@Composable
+private fun PageTextBox(box: DocxTextBox, setup: PageSetup, scale: PageScale, widthPt: Float) {
+    val boxWidth = minOf(box.widthPt ?: widthPt, widthPt)
+    val inner = boxWidth - 2 * PageLayout.TEXT_BOX_PADDING_PT
+    var m = Modifier.padding(vertical = scale.dp(2f)).width(scale.dp(boxWidth))
+    box.fillHex?.let { m = m.background(Color(("FF$it").toLong(16))) }
+    if (box.lineWidthPt > 0f) m = m.border(maxOf(0.5.dp, scale.dp(box.lineWidthPt)), box.lineHex?.let { Color(("FF$it").toLong(16)) } ?: PageInk)
+    Column(m.padding(scale.dp(PageLayout.TEXT_BOX_PADDING_PT))) {
+        for (b in box.blocks) PageBlock(b, setup, scale, inner)
+    }
+}
+
+/** A picture placed at a spot on the page, behind or in front of the text. */
+@Composable
+private fun FloatingPicture(f: DocxFloat, setup: PageSetup, scale: PageScale) {
+    val bitmap by produceState<android.graphics.Bitmap?>(null, f) {
+        value = withContext(Dispatchers.Default) { DocxImages.decode(f.image.bytes) }
+    }
+    val (w, h) = PageLayout.imageBoxPt(f.image, setup.widthPt, setup.heightPt)
+    val areaX = if (f.xFrom == FloatFrom.Page) 0f else setup.marginLeftPt
+    val areaW = if (f.xFrom == FloatFrom.Page) setup.widthPt else setup.contentWidthPt
+    val areaY = if (f.yFrom == FloatFrom.Page) 0f else setup.marginTopPt
+    val areaH = if (f.yFrom == FloatFrom.Page) setup.heightPt else setup.contentHeightPt
+    val x = when (f.alignH) {
+        DocxAlign.Center -> areaX + (areaW - w) / 2f
+        DocxAlign.End -> areaX + areaW - w
+        DocxAlign.Start -> areaX
+        else -> areaX + f.xPt
+    }
+    val y = when (f.alignV) {
+        CellAlign.Center -> areaY + (areaH - h) / 2f
+        CellAlign.Bottom -> areaY + areaH - h
+        CellAlign.Top -> areaY
+        null -> areaY + f.yPt
+    }
+    bitmap?.let {
+        Image(
+            it.asImageBitmap(), contentDescription = "Picture on the page", contentScale = ContentScale.Fit,
+            // The page box is inset by the side margins, so the offset is from there; the picture may run into them.
+            modifier = Modifier.offset(scale.dp(x - setup.marginLeftPt), scale.dp(y)).requiredSize(scale.dp(w), scale.dp(h)),
+        )
     }
 }
 

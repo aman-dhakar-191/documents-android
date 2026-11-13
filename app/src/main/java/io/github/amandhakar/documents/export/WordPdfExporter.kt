@@ -21,6 +21,8 @@ import android.text.style.UnderlineSpan
 import io.github.amandhakar.documents.word.DocxAlign
 import io.github.amandhakar.documents.word.DocxBlock
 import io.github.amandhakar.documents.word.DocxColumns
+import io.github.amandhakar.documents.word.DocxFloat
+import io.github.amandhakar.documents.word.DocxTextBox
 import io.github.amandhakar.documents.word.DocxDocument
 import io.github.amandhakar.documents.word.DocxImage
 import io.github.amandhakar.documents.word.DocxImages
@@ -111,6 +113,8 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup, val fonts: 
             is DocxTable -> table(block)
             is DocxImage -> image(block)
             is DocxColumns -> Unit // columns aren't laid out in the PDF: the text runs as one column
+            is DocxFloat -> Unit // floating pictures aren't drawn in the PDF
+            is DocxTextBox -> for (inner in block.blocks) this.block(inner) // a text box's text runs in the flow
         }
     }
 
