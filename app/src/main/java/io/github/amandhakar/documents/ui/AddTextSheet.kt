@@ -25,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.amandhakar.documents.edit.FontFamilyChoice
 import io.github.amandhakar.documents.edit.FontStyleChoice
 import io.github.amandhakar.documents.edit.PdfText
 import io.github.amandhakar.documents.edit.TextBoxMath
@@ -72,17 +71,7 @@ fun AddTextSheet(onAdd: (text: String, matchNearby: Boolean, font: FontStyleChoi
                 }
             }
             if (!matchNearby) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for ((family, label) in listOf(
-                        FontFamilyChoice.Sans to "Sans",
-                        FontFamilyChoice.Serif to "Serif",
-                        FontFamilyChoice.Mono to "Mono",
-                    )) {
-                        ChoiceButton(label, font.family == family) { font = font.copy(family = family) }
-                    }
-                    ChoiceButton("B", font.bold) { font = font.copy(bold = !font.bold) }
-                    ChoiceButton("I", font.italic) { font = font.copy(italic = !font.italic) }
-                }
+                FontPicker(font) { font = it }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).height52()) { Text("Cancel") }
