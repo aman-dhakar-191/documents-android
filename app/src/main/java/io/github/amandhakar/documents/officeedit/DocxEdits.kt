@@ -101,7 +101,7 @@ object DocxEditModel {
                     if (b.id !in r.deleted) out += if (b.id in r.replaced) withText(b, r.replaced.getValue(b.id)) else b
                     out += chain(b.id, b, r)
                 }
-                b is DocxTable -> out += DocxTable(b.rows.map { row -> row.map { cell -> mapBlocks(cell, r) } })
+                b is DocxTable -> out += b.copy(rows = b.rows.map { row -> row.map { cell -> mapBlocks(cell, r) } })
                 else -> out += b
             }
         }

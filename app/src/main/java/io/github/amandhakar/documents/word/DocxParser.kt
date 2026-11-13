@@ -40,6 +40,8 @@ object DocxParser {
     private const val MAX_COLUMNS = 4
     private const val DEFAULT_GAP_TWIPS = 720
     private const val AUTO_SPACING_PT = 14f
+    private const val MAX_GRID = 64
+    private const val DEFAULT_CELL_MARGIN_PT = 5.4f
 
 
     fun parse(input: InputStream, limits: DocxLimits = DocxLimits()): DocxDocument {
@@ -133,7 +135,25 @@ object DocxParser {
     internal class StyleInfo(
         val id: String, val name: String, val basedOn: String?, val numId: String?, val ilvl: Int?,
         val props: StyleProps = StyleProps(), val isDefaultParagraph: Boolean = false,
+        val table: TableProps = TableProps(), val isDefaultTable: Boolean = false,
     )
+
+    /** A border a table or cell says something about: a line, or (with a null [line]) explicitly none. */
+    internal data class BorderSpec(val line: BorderLine?)
+
+    /** What a table style or a table says about its lines, cell margins, alignment and indent; null means "not said here". */
+    internal data class TableProps(
+        val top: BorderSpec? = null, val left: BorderSpec? = null, val bottom: BorderSpec? = null, val right: BorderSpec? = null,
+        val insideH: BorderSpec? = null, val insideV: BorderSpec? = null,
+        val marginLeft: Float? = null, val marginRight: Float? = null, val marginTop: Float? = null, val marginBottom: Float? = null,
+        val align: DocxAlign? = null, val indent: Float? = null,
+    ) {
+        fun over(base: TableProps) = TableProps(
+            top ?: base.top, left ?: base.left, bottom ?: base.bottom, right ?: base.right, insideH ?: base.insideH, insideV ?: base.insideV,
+            marginLeft ?: base.marginLeft, marginRight ?: base.marginRight, marginTop ?: base.marginTop, marginBottom ?: base.marginBottom,
+            align ?: base.align, indent ?: base.indent,
+        )
+    }
 
     /** The theme's heading ("major") and body ("minor") fonts, which runs name as "majorHAnsi", "minorAscii" and so on. */
     internal class Theme(val major: String?, val minor: String?) {
@@ -185,11 +205,30 @@ object DocxParser {
         }
 
         private val defaultParagraphId: String? = byId.values.firstOrNull { it.isDefaultParagraph }?.id
+        private val defaultTableId: String? = byId.values.firstOrNull { it.isDefaultTable }?.id
+
+        /** A table's settings: the default table style, then its own style and the ones it is based on, then the table's [direct] settings. */
+        fun tableProps(styleId: String?, direct: TableProps): TableProps {
+            var p = TableProps()
+            for (s in chain(defaultTableId).asReversed()) p = s.table.over(p)
+            if (styleId != null && styleId != defaultTableId) for (s in chain(styleId).asReversed()) p = s.table.over(p)
+            return direct.over(p)
+        }
+
+        /** What a table's style says about the paragraphs inside it (spacing, size, font), or null when the file has no styles. */
+        fun tableParagraphBase(styleId: String?): StyleProps? {
+            if (!present) return null
+            var p = StyleProps()
+            for (s in chain(defaultTableId).asReversed()) p = s.props.over(p)
+            if (styleId != null && styleId != defaultTableId) for (s in chain(styleId).asReversed()) p = s.props.over(p)
+            return p
+        }
 
         /** The layout of a paragraph: the defaults, then its style and the styles it is based on, then its own [direct] settings. */
-        fun layout(styleId: String?, direct: StyleProps): ParagraphLayout? {
+        fun layout(styleId: String?, direct: StyleProps, tableBase: StyleProps? = null): ParagraphLayout? {
             if (!present) return null
             var p = docDefaults
+            if (tableBase != null) p = tableBase.over(p)
             for (s in chain(styleId ?: defaultParagraphId).asReversed()) p = s.props.over(p)
             p = direct.over(p)
             return ParagraphLayout(
@@ -240,11 +279,45 @@ object DocxParser {
                         ilvl = numPr?.valOf("ilvl")?.toIntOrNull(),
                         props = readProps(style.child("pPr"), style.child("rPr"), reader),
                         isDefaultParagraph = style.wAttr("type") == "paragraph" && style.wAttr("default").let { it == "1" || it == "true" },
+                        table = readTableProps(style.child("tblPr")),
+                        isDefaultTable = style.wAttr("type") == "table" && style.wAttr("default").let { it == "1" || it == "true" },
                     )
                 }
                 val defaults = root.child("docDefaults")
                 val base = readProps(defaults?.child("pPrDefault")?.child("pPr"), defaults?.child("rPrDefault")?.child("rPr"), reader)
                 return Styles(map, base, theme = theme)
+            }
+
+            private fun hex6(v: String?): String? = v?.takeIf { Regex("^[0-9A-Fa-f]{6}$").matches(it) }?.uppercase()
+
+            /** One border element: a line (thickness in eighths of a point), explicitly none, or null when absent. */
+            fun readBorder(e: Element?): BorderSpec? {
+                if (e == null) return null
+                val kind = e.wAttr("val")
+                if (kind == null || kind == "nil" || kind == "none") return BorderSpec(null)
+                val width = ((e.wAttr("sz")?.toIntOrNull() ?: 4) / 8f).coerceIn(0.25f, 12f)
+                return BorderSpec(BorderLine(width, hex6(e.wAttr("color"))))
+            }
+
+            /** The lines, cell margins, alignment and indent a `tblPr` (or a table style's) says. */
+            fun readTableProps(tblPr: Element?): TableProps {
+                val b = tblPr?.child("tblBorders")
+                val m = tblPr?.child("tblCellMar")
+                fun margin(e: Element?) = e?.wAttr("w")?.toIntOrNull()?.coerceIn(0, 2880)?.let { it / 20f }
+                return TableProps(
+                    top = readBorder(b?.child("top")), left = readBorder(b?.child("left") ?: b?.child("start")),
+                    bottom = readBorder(b?.child("bottom")), right = readBorder(b?.child("right") ?: b?.child("end")),
+                    insideH = readBorder(b?.child("insideH")), insideV = readBorder(b?.child("insideV")),
+                    marginLeft = margin(m?.child("left") ?: m?.child("start")), marginRight = margin(m?.child("right") ?: m?.child("end")),
+                    marginTop = margin(m?.child("top")), marginBottom = margin(m?.child("bottom")),
+                    align = when (tblPr?.valOf("jc")) {
+                        "center" -> DocxAlign.Center
+                        "right", "end" -> DocxAlign.End
+                        "left", "start" -> DocxAlign.Start
+                        else -> null
+                    },
+                    indent = tblPr?.child("tblInd")?.wAttr("w")?.toIntOrNull()?.coerceIn(-2880, 14400)?.let { it / 20f },
+                )
             }
 
             private fun twipsToPt(v: String?): Float? = v?.toIntOrNull()?.let { it.coerceIn(-31680, 31680) / 20f }
@@ -401,18 +474,86 @@ object DocxParser {
             }
         }
 
+        /** The table style's settings for paragraphs while a table is being read (spacing, size, font). */
+        private var tableBase: StyleProps? = null
+
+        private class RawCell(val gridStart: Int, val span: Int, val vMerge: VMerge, val shading: String?, val own: TableProps, val vAlign: CellAlign, val widthPt: Float?)
+
         private fun readTable(tbl: Element): DocxTable {
-            val rows = ArrayList<List<List<DocxBlock>>>()
-            for (tr in tbl.children("tr")) {
-                val cells = ArrayList<List<DocxBlock>>()
-                for (tc in tr.children("tc")) {
-                    val cell = ArrayList<DocxBlock>()
-                    readInto(tc, cell)
-                    cells += cell
+            val tblPr = tbl.child("tblPr")
+            val styleId = tblPr?.valOf("tblStyle")
+            val props = styles.tableProps(styleId, Styles.readTableProps(tblPr))
+            val saved = tableBase
+            tableBase = styles.tableParagraphBase(styleId)
+            try {
+                val rows = ArrayList<List<List<DocxBlock>>>()
+                val raw = ArrayList<List<RawCell>>()
+                val minHeights = ArrayList<Float?>()
+                for (tr in tbl.children("tr")) {
+                    val trPr = tr.child("trPr")
+                    minHeights += trPr?.child("trHeight")?.wAttr("val")?.toIntOrNull()?.takeIf { it > 0 }?.let { (it / 20f).coerceAtMost(1000f) }
+                    var gridCol = (trPr?.valOf("gridBefore")?.toIntOrNull() ?: 0).coerceIn(0, MAX_GRID)
+                    val cells = ArrayList<List<DocxBlock>>()
+                    val rawRow = ArrayList<RawCell>()
+                    for (tc in tr.children("tc")) {
+                        val tcPr = tc.child("tcPr")
+                        val span = (tcPr?.valOf("gridSpan")?.toIntOrNull() ?: 1).coerceIn(1, MAX_GRID)
+                        val merge = tcPr?.child("vMerge")?.let { if (it.wAttr("val") == "restart") VMerge.Restart else VMerge.Continue } ?: VMerge.None
+                        val fill = tcPr?.child("shd")?.wAttr("fill")?.takeIf { Regex("^[0-9A-Fa-f]{6}$").matches(it) }?.uppercase()
+                        val b = tcPr?.child("tcBorders")
+                        val own = TableProps(
+                            top = Styles.readBorder(b?.child("top")), left = Styles.readBorder(b?.child("left") ?: b?.child("start")),
+                            bottom = Styles.readBorder(b?.child("bottom")), right = Styles.readBorder(b?.child("right") ?: b?.child("end")),
+                        )
+                        val align = when (tcPr?.valOf("vAlign")) {
+                            "center" -> CellAlign.Center
+                            "bottom" -> CellAlign.Bottom
+                            else -> CellAlign.Top
+                        }
+                        val tcW = tcPr?.child("tcW")
+                        val width = if (tcW?.wAttr("type") == "dxa") tcW.wAttr("w")?.toIntOrNull()?.takeIf { it > 0 }?.let { (it / 20f).coerceAtMost(2000f) } else null
+                        val cell = ArrayList<DocxBlock>()
+                        readInto(tc, cell)
+                        cells += cell
+                        rawRow += RawCell(gridCol, span, merge, fill, own, align, width)
+                        gridCol = (gridCol + span).coerceAtMost(MAX_GRID)
+                    }
+                    rows += cells
+                    raw += rawRow
                 }
-                rows += cells
+                return DocxTable(rows, tableLayout(tbl, props, raw, minHeights))
+            } finally {
+                tableBase = saved
             }
-            return DocxTable(rows)
+        }
+
+        /** The grid, borders and merges of a table, from what its rows said. */
+        private fun tableLayout(tbl: Element, props: TableProps, raw: List<List<RawCell>>, minHeights: List<Float?>): TableLayout {
+            val grid = (tbl.child("tblGrid")?.children("gridCol")?.map { (it.wAttr("w")?.toIntOrNull()?.coerceIn(0, 40000) ?: 0) / 20f } ?: emptyList()).take(MAX_GRID).toMutableList()
+            val columns = maxOf(grid.size, raw.maxOfOrNull { row -> row.maxOfOrNull { it.gridStart + it.span } ?: 0 } ?: 0)
+            while (grid.size < columns) grid += 0f
+            // A column the grid gave no width gets the width a single-column cell asked for, if any.
+            for (row in raw) for (c in row) if (c.span == 1 && c.widthPt != null && grid.getOrElse(c.gridStart) { 0f } <= 0f && c.gridStart < grid.size) grid[c.gridStart] = c.widthPt
+            val lastRow = raw.size - 1
+            val cells = raw.mapIndexed { r, row ->
+                row.map { c ->
+                    fun pick(own: BorderSpec?, table: BorderSpec?) = (own ?: table)?.line
+                    var top = pick(c.own.top, if (r == 0) props.top else props.insideH)
+                    var bottom = pick(c.own.bottom, if (r == lastRow) props.bottom else props.insideH)
+                    val left = pick(c.own.left, if (c.gridStart == 0) props.left else props.insideV)
+                    val right = pick(c.own.right, if (c.gridStart + c.span >= columns) props.right else props.insideV)
+                    // Merged cells read as one: no line across them.
+                    if (c.vMerge == VMerge.Restart) bottom = null
+                    if (c.vMerge == VMerge.Continue) top = null
+                    CellProps(c.gridStart, c.span, c.vMerge, c.shading, CellBorders(top, left, bottom, right), c.vAlign)
+                }
+            }
+            return TableLayout(
+                columnWidthsPt = grid, cells = cells, rowMinHeightsPt = minHeights,
+                marginLeftPt = props.marginLeft ?: DEFAULT_CELL_MARGIN_PT, marginRightPt = props.marginRight ?: DEFAULT_CELL_MARGIN_PT,
+                marginTopPt = props.marginTop ?: 0f, marginBottomPt = props.marginBottom ?: 0f,
+                align = props.align ?: DocxAlign.Start, indentPt = props.indent ?: 0f,
+            )
         }
 
         private fun readParagraph(p: Element, out: MutableList<DocxBlock>) {
@@ -462,7 +603,7 @@ object DocxParser {
                 out += DocxParagraph(
                     mergeRuns(runs), heading, list, align, pageBreakBefore = breakBefore, pageBreakAfter = flags.pageBreak,
                     id = ids[p] ?: -1, editable = !hasField(p), columnBreakAfter = flags.columnBreak,
-                    layout = styles.layout(styleId, Styles.readProps(pPr, null)),
+                    layout = styles.layout(styleId, Styles.readProps(pPr, null), tableBase),
                 )
                 out += images
             }

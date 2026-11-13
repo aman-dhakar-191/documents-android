@@ -219,9 +219,17 @@ class PageLayoutTest {
         assertEquals(1, pages.flatten().count { it is DocxTable })
     }
 
-    @Test fun aTableTallerThanAPageIsStillPlacedOnce() {
+    @Test fun aTableTallerThanAPageContinuesOnTheNextPagesRowByRow() {
         val rows = (1..500).map { listOf(listOf<DocxBlock>(para("row $it"))) }
         val pages = PageLayout.paginate(doc(DocxTable(rows)))
+        assertTrue(pages.size > 1)
+        val seen = pages.flatten().filterIsInstance<DocxTable>().flatMap { t -> t.rows.map { ((it[0][0]) as DocxParagraph).text } }
+        assertEquals((1..500).map { "row $it" }, seen)
+    }
+
+    @Test fun aSingleRowTallerThanAPageIsStillPlacedOnce() {
+        val tall = DocxParagraph(listOf(DocxRun("word ".repeat(20000))))
+        val pages = PageLayout.paginate(doc(DocxTable(listOf(listOf(listOf<DocxBlock>(tall))))))
         assertEquals(1, pages.flatten().count { it is DocxTable })
     }
 
