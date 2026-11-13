@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
@@ -211,6 +218,11 @@ private fun styled(p: DocxParagraph, scale: PageScale): AnnotatedString = buildA
 
 @Composable
 private fun PageTable(table: DocxTable, setup: PageSetup, scale: PageScale, widthPt: Float) {
+    val layout = table.layout
+    if (layout != null) {
+        LaidOutTable(table, layout, setup, scale, widthPt)
+        return
+    }
     Column(Modifier.fillMaxWidth().padding(vertical = scale.dp(4f)).border(1.dp, PageLine)) {
         for (row in table.rows) {
             Row(Modifier.fillMaxWidth()) {
@@ -218,6 +230,64 @@ private fun PageTable(table: DocxTable, setup: PageSetup, scale: PageScale, widt
                 for (cell in row) {
                     Column(Modifier.weight(1f).border(0.5.dp, PageLine).padding(scale.dp(4f))) {
                         for (inner in cell) PageBlock(inner, setup, scale, cellWidth - 8f)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun borderColor(line: BorderLine): Color = line.colorHex?.let { Color(("FF$it").toLong(16)) } ?: PageInk
+
+/**
+ * A table drawn from what the file says: its column widths, cells that span columns, shading, lines, margins, vertical
+ * alignment, row heights, and where it sits (left, centred, right). A merged cell's text stays in its top row.
+ */
+@Composable
+private fun LaidOutTable(table: DocxTable, layout: TableLayout, setup: PageSetup, scale: PageScale, widthPt: Float) {
+    val widths = remember(layout, widthPt) { PageLayout.tableColumnWidths(layout, widthPt) }
+    val tableWidth = widths.sum()
+    val startPt = when (layout.align) {
+        DocxAlign.Center -> ((widthPt - tableWidth) / 2f).coerceAtLeast(0f)
+        DocxAlign.End -> (widthPt - tableWidth).coerceAtLeast(0f)
+        else -> layout.indentPt.coerceIn(0f, maxOf(0f, widthPt - 24f))
+    }
+    Column(Modifier.padding(start = scale.dp(startPt), top = scale.dp(4f), bottom = scale.dp(4f))) {
+        table.rows.forEachIndexed { r, row ->
+            val minHeight = layout.rowMinHeightsPt.getOrNull(r) ?: 0f
+            Row(Modifier.height(IntrinsicSize.Min).heightIn(min = scale.dp(minHeight))) {
+                val firstStart = layout.cells.getOrNull(r)?.firstOrNull()?.gridStart ?: 0
+                if (firstStart > 0) Spacer(Modifier.width(scale.dp(widths.take(firstStart).sum())))
+                row.forEachIndexed { c, cell ->
+                    val props = layout.cells.getOrNull(r)?.getOrNull(c) ?: CellProps(c)
+                    val first = props.gridStart.coerceIn(0, widths.size)
+                    val last = (props.gridStart + props.colSpan).coerceIn(first, widths.size)
+                    val cellWidth = widths.subList(first, last).sum()
+                    val textWidth = (cellWidth - layout.marginLeftPt - layout.marginRightPt).coerceAtLeast(12f)
+                    val borders = props.borders
+                    Box(
+                        Modifier.width(scale.dp(cellWidth)).fillMaxHeight()
+                            .background(props.shadingHex?.let { Color(("FF$it").toLong(16)) } ?: Color.Transparent)
+                            .drawBehind {
+                                fun edge(line: BorderLine?, a: Offset, b: Offset) {
+                                    if (line != null) drawLine(borderColor(line), a, b, strokeWidth = maxOf(1f, scale.dp(line.widthPt).toPx()))
+                                }
+                                edge(borders.top, Offset(0f, 0f), Offset(size.width, 0f))
+                                edge(borders.bottom, Offset(0f, size.height), Offset(size.width, size.height))
+                                edge(borders.left, Offset(0f, 0f), Offset(0f, size.height))
+                                edge(borders.right, Offset(size.width, 0f), Offset(size.width, size.height))
+                            }
+                            .padding(
+                                start = scale.dp(layout.marginLeftPt), end = scale.dp(layout.marginRightPt),
+                                top = scale.dp(layout.marginTopPt), bottom = scale.dp(layout.marginBottomPt),
+                            ),
+                        contentAlignment = when (props.vAlign) {
+                            CellAlign.Top -> Alignment.TopStart
+                            CellAlign.Center -> Alignment.CenterStart
+                            CellAlign.Bottom -> Alignment.BottomStart
+                        },
+                    ) {
+                        Column { for (block in cell) PageBlock(block, setup, scale, textWidth) }
                     }
                 }
             }

@@ -153,9 +153,35 @@ object PageLayout {
         is DocxParagraph -> spaceBefore(block) + lineCount(block, widthPt) * lineHeightPt(block) + spaceAfter(block)
         is DocxImage -> imageBoxPt(block, widthPt, page.contentHeightPt).second + 6f
         is DocxColumns -> 0f
-        is DocxTable -> {
-            var total = 8f
-            for (row in block.rows) {
+        is DocxTable -> TABLE_OUTER_PT + tableRowHeights(block, page, widthPt).sum()
+    }
+
+    private const val TABLE_OUTER_PT = 8f
+    private const val MIN_COLUMN_WIDTH_PT = 24f
+
+    /**
+     * The widths of a table's columns in points when laid out [availablePt] wide: the grid the file gives, columns it
+     * gave no width sharing what is left, and everything scaled down when wider than the text area.
+     */
+    fun tableColumnWidths(layout: TableLayout, availablePt: Float): List<Float> {
+        val widths = layout.columnWidthsPt.toMutableList()
+        if (widths.isEmpty()) return widths
+        val zeros = widths.count { it <= 0f }
+        if (zeros > 0) {
+            val rest = maxOf(zeros * MIN_COLUMN_WIDTH_PT, availablePt - widths.filter { it > 0f }.sum())
+            for (i in widths.indices) if (widths[i] <= 0f) widths[i] = rest / zeros
+        }
+        val total = widths.sum()
+        if (availablePt > 0f && total > availablePt) for (i in widths.indices) widths[i] = widths[i] * availablePt / total
+        return widths
+    }
+
+    /** The height of each row of a table laid out [widthPt] wide: its tallest cell (merged cells count on their first row) or the row's minimum height. */
+    fun tableRowHeights(table: DocxTable, page: PageSetup, widthPt: Float): List<Float> {
+        val layout = table.layout
+        val minLine = BODY_PT * LINE_FACTOR
+        if (layout == null) {
+            return table.rows.map { row ->
                 val cellWidth = widthPt / maxOf(1, row.size)
                 var tallest = 0f
                 for (cell in row) {
@@ -163,10 +189,41 @@ object PageLayout {
                     for (inner in cell) cellHeight += heightOf(inner, page, cellWidth - 2 * CELL_PADDING_PT)
                     tallest = maxOf(tallest, cellHeight)
                 }
-                total += tallest + 2 * CELL_PADDING_PT
+                tallest + 2 * CELL_PADDING_PT
             }
-            total
         }
+        val widths = tableColumnWidths(layout, widthPt)
+        return table.rows.mapIndexed { r, row ->
+            var tallest = minLine
+            row.forEachIndexed { c, cell ->
+                val props = layout.cells.getOrNull(r)?.getOrNull(c) ?: return@forEachIndexed
+                if (props.vMerge == VMerge.Continue) return@forEachIndexed
+                val from = props.gridStart.coerceIn(0, widths.size)
+                val to = (props.gridStart + props.colSpan).coerceIn(from, widths.size)
+                val cellWidth = maxOf(MIN_COLUMN_WIDTH_PT, widths.subList(from, to).sum() - layout.marginLeftPt - layout.marginRightPt)
+                var content = 0f
+                for (inner in cell) content += heightOf(inner, page, cellWidth)
+                tallest = maxOf(tallest, content + layout.marginTopPt + layout.marginBottomPt)
+            }
+            maxOf(tallest, layout.rowMinHeightsPt.getOrNull(r) ?: 0f)
+        }
+    }
+
+    /**
+     * A table cut after as many whole rows as fit in [roomPt], as the first part and the rest, or null when it can't be
+     * cut (one row, or not even the first row fits).
+     */
+    fun splitTable(table: DocxTable, page: PageSetup, widthPt: Float, roomPt: Float): Pair<DocxTable, DocxTable>? {
+        if (table.rows.size < 2) return null
+        val heights = tableRowHeights(table, page, widthPt)
+        var used = TABLE_OUTER_PT
+        var k = 0
+        while (k < heights.size && used + heights[k] <= roomPt) {
+            used += heights[k]
+            k++
+        }
+        if (k == 0 || k >= table.rows.size) return null
+        return table.slice(0, k) to table.slice(k, table.rows.size)
     }
 
     /** Cuts a paragraph after [chars] characters (preferably at a space), keeping each run's look. The rest has no bullet but keeps its indent. */
@@ -247,6 +304,15 @@ object PageLayout {
                             block = b
                             continue
                         }
+                    }
+                }
+                if (block is DocxTable) {
+                    val cut = splitTable(block, page, width, limit - used)
+                    if (cut != null) {
+                        current += cut.first
+                        newPage()
+                        block = cut.second
+                        continue
                     }
                 }
                 if (current.isEmpty()) {
@@ -379,6 +445,16 @@ object PageLayout {
                             block = b
                             continue
                         }
+                    }
+                }
+                if (block is DocxTable) {
+                    val cut = splitTable(block, page, width, limit - used)
+                    if (cut != null) {
+                        cols[col] += cut.first
+                        heights[col] = used + heightOf(cut.first, page, width)
+                        nextSlot()
+                        block = cut.second
+                        continue
                     }
                 }
                 if (cols[col].isEmpty() && bandTop == 0f) {

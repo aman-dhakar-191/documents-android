@@ -77,7 +77,50 @@ data class DocxParagraph(
 data class DocxColumns(val count: Int, val gapPt: Float, val newPage: Boolean = false) : DocxBlock
 
 /** Rows of cells; each cell holds blocks (paragraphs, or even another table). */
-data class DocxTable(val rows: List<List<List<DocxBlock>>>) : DocxBlock
+data class DocxTable(val rows: List<List<List<DocxBlock>>>, val layout: TableLayout? = null) : DocxBlock {
+    /** Rows [from] until [to] as a table of their own, so a long table can continue on the next page. */
+    fun slice(from: Int, to: Int): DocxTable = DocxTable(
+        rows.subList(from, to),
+        layout?.copy(cells = layout.cells.subList(from, to), rowMinHeightsPt = layout.rowMinHeightsPt.subList(from, to)),
+    )
+}
+
+/** One side of a cell: a line [widthPt] thick in [colorHex] (six hex digits, null for the automatic dark ink). */
+data class BorderLine(val widthPt: Float, val colorHex: String? = null)
+
+/** The four sides of a cell; null means no line there. */
+data class CellBorders(val top: BorderLine? = null, val left: BorderLine? = null, val bottom: BorderLine? = null, val right: BorderLine? = null)
+
+/** A cell in a column of merged cells: the top one ([Restart]) holds the content, the ones below ([Continue]) continue it. */
+enum class VMerge { None, Restart, Continue }
+
+enum class CellAlign { Top, Center, Bottom }
+
+/** What the file says about one cell. [gridStart] is the grid column it starts at and [colSpan] how many it covers. [borders] are the lines that really apply (the table's and the cell's own, merged). */
+data class CellProps(
+    val gridStart: Int,
+    val colSpan: Int = 1,
+    val vMerge: VMerge = VMerge.None,
+    val shadingHex: String? = null,
+    val borders: CellBorders = CellBorders(),
+    val vAlign: CellAlign = CellAlign.Top,
+)
+
+/**
+ * The shape of a table as the file gives it, in points. [cells] has one entry per cell of [DocxTable.rows], in the same
+ * order. [rowMinHeightsPt] is each row's minimum height (null when the file sets none).
+ */
+data class TableLayout(
+    val columnWidthsPt: List<Float>,
+    val cells: List<List<CellProps>>,
+    val rowMinHeightsPt: List<Float?>,
+    val marginLeftPt: Float = 5.4f,
+    val marginRightPt: Float = 5.4f,
+    val marginTopPt: Float = 0f,
+    val marginBottomPt: Float = 0f,
+    val align: DocxAlign = DocxAlign.Start,
+    val indentPt: Float = 0f,
+)
 
 /** A picture. [bytes] is the original png / jpeg / gif / bmp / webp file. [pageBreakBefore] starts it on a new page. */
 class DocxImage(val name: String, val bytes: ByteArray, val pageBreakBefore: Boolean = false) : DocxBlock
