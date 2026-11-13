@@ -20,13 +20,18 @@ object DocumentOpener {
             DocumentFormat.Html -> throw UnsupportedFormatException("text/html")
             DocumentFormat.Docx -> throw UnsupportedFormatException(DocumentFormat.DOCX_MIME)
             DocumentFormat.Pptx -> throw UnsupportedFormatException(DocumentFormat.PPTX_MIME)
+            DocumentFormat.Markdown, DocumentFormat.Text -> throw UnsupportedFormatException(format.mimeType)
         }
     }
 
     /** The format of the file at [uri] (by its MIME type, then by its name), or null if it isn't supported. Blocking. */
-    fun formatOf(context: Context, uri: Uri): DocumentFormat? =
-        DocumentFormat.fromMimeType(context.contentResolver.getType(uri))
+    fun formatOf(context: Context, uri: Uri): DocumentFormat? {
+        val mime = context.contentResolver.getType(uri)
+        return DocumentFormat.fromMimeType(mime)
             ?: DocumentFormat.fromFileName(displayName(context, uri) ?: uri.lastPathSegment)
+            // Plain text of any name (a README with no ending) is shown as text.
+            ?: if (mime?.substringBefore(';')?.trim()?.lowercase() == "text/plain") DocumentFormat.Text else null
+    }
 
     private fun openPdf(context: Context, uri: Uri): Document {
         val direct = context.contentResolver.openFileDescriptor(uri, "r")

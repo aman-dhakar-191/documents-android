@@ -5,7 +5,7 @@ import java.io.IOException
 
 /** Names and messages for saving a document as a PDF. Free of Android calls so it can be unit tested. */
 object ExportNames {
-    private val ENDINGS = listOf(".docx", ".pptx", ".html", ".htm", ".xhtml", ".pdf")
+    private val ENDINGS = listOf(".docx", ".pptx", ".markdown", ".mdown", ".html", ".htm", ".xhtml", ".md", ".pdf")
 
     /** "Report.docx" gives "Report.pdf"; a missing, blank or odd name still gives a usable file name. */
     fun pdfName(original: String?): String {

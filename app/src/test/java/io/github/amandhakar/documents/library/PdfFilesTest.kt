@@ -20,6 +20,11 @@ class PdfFilesTest {
         assertEquals("Deck", PdfFiles.title("Deck.PPTX"))
     }
 
+    @Test fun titleDropsMarkdownExtensions() {
+        assertEquals("README", PdfFiles.title("README.md"))
+        assertEquals("notes", PdfFiles.title("notes.MARKDOWN"))
+    }
+
     @Test fun titleDropsWordExtension() {
         assertEquals("Letter", PdfFiles.title("Letter.docx"))
         assertEquals("Letter", PdfFiles.title("Letter.DOCX"))

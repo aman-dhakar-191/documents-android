@@ -8,7 +8,8 @@ enum class LibraryFilter(val label: String) {
     Pdf("PDF"),
     Web("Web pages"),
     Word("Word"),
-    Slides("PowerPoint");
+    Slides("PowerPoint"),
+    Markdown("Markdown");
 
     fun matches(format: DocumentFormat): Boolean = when (this) {
         All -> true
@@ -16,6 +17,7 @@ enum class LibraryFilter(val label: String) {
         Web -> format == DocumentFormat.Html
         Word -> format == DocumentFormat.Docx
         Slides -> format == DocumentFormat.Pptx
+        Markdown -> format == DocumentFormat.Markdown
     }
 }
 

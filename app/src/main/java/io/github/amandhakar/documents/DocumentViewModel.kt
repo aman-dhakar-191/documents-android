@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.amandhakar.documents.document.Document
 import io.github.amandhakar.documents.document.DocumentFormat
+import io.github.amandhakar.documents.document.TextFiles
+import io.github.amandhakar.documents.markdown.MarkdownParser
 import io.github.amandhakar.documents.document.DocumentOpener
 import io.github.amandhakar.documents.document.UnsupportedFormatException
 import io.github.amandhakar.documents.ooxml.OoxmlException
@@ -38,6 +40,12 @@ sealed interface ViewerState {
 
     /** A PowerPoint file (.pptx), already read, shown as slides. */
     data class Pptx(val uri: Uri, val deck: PptxDeck) : ViewerState
+
+    /**
+     * A Markdown or plain text file, already read. [document] is the Markdown turned into the Word model (null for plain
+     * text, which only has its [source]). [truncated] is true when the file was longer than the app reads.
+     */
+    data class Text(val uri: Uri, val source: String, val document: DocxDocument?, val truncated: Boolean) : ViewerState
 }
 
 class DocumentViewModel(app: Application) : AndroidViewModel(app) {
@@ -73,6 +81,18 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                         onFailure = { ViewerState.Error(messageFor(it)) },
                     )
                 }
+                return@launch
+            }
+            if (format == DocumentFormat.Markdown || format == DocumentFormat.Text) {
+                val read = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val bytes = getApplication<Application>().contentResolver.openInputStream(uri)?.use { TextFiles.readLimited(it) }
+                            ?: throw IOException("Could not read $uri")
+                        val source = TextFiles.decode(bytes.first)
+                        ViewerState.Text(uri, source, if (format == DocumentFormat.Markdown) MarkdownParser.parse(source) else null, bytes.second)
+                    }
+                }
+                if (isActive) _state.value = read.fold(onSuccess = { it }, onFailure = { ViewerState.Error(messageFor(it)) })
                 return@launch
             }
             if (format == DocumentFormat.Pptx) {
@@ -144,7 +164,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         is DocxException -> error.message ?: "This Word file couldn't be opened."
         is OoxmlException -> error.message ?: "This file couldn't be opened."
         is OutOfMemoryError -> "This document is too big to open on this phone."
-        is UnsupportedFormatException -> "This file type isn't supported yet. Only PDF files, Word (.docx) and PowerPoint (.pptx) files and web pages (.html) can be opened."
+        is UnsupportedFormatException -> "This file type isn't supported yet. Only PDF files, Word (.docx), PowerPoint (.pptx), Markdown (.md) and text files and web pages (.html) can be opened."
         is SecurityException -> "Couldn't open this file. It may be password-protected, which isn't supported yet."
         is IOException -> "Couldn't open this file. It may be damaged or not a valid PDF."
         else -> "Something went wrong opening this file."

@@ -108,7 +108,7 @@ fun LibraryScreen(
         }
         LibraryState.NeedsPermission -> Message(
             "To show your files here, Documents needs permission to see the files on your phone. " +
-                "It only looks for PDF, Word, PowerPoint and web page files, and nothing leaves your phone. " +
+                "It only looks for PDF, Word, PowerPoint, Markdown and web page files, and nothing leaves your phone. " +
                 "You can still open a single file with Browse without giving this permission.",
         ) {
             Button(onClick = {
@@ -294,6 +294,7 @@ private fun Thumbnail(file: PdfFile, modifier: Modifier) {
         val (icon, label) = when (file.format) {
             DocumentFormat.Docx -> DocIcons.Description to "Word"
             DocumentFormat.Pptx -> DocIcons.Slideshow to "PowerPoint"
+            DocumentFormat.Markdown, DocumentFormat.Text -> DocIcons.Notes to "Markdown"
             else -> DocIcons.Public to "Web page"
         }
         Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {

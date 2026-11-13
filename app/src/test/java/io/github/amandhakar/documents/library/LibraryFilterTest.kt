@@ -109,4 +109,15 @@ class SortingTest {
     @Test fun applyDefaultsToNewestFirst() = assertEquals(listOf(1L, 3L, 4L, 2L), LibraryFilters.apply(files, LibraryFilter.All).map { it.id })
 
     @Test fun everyOrderHasALabel() = assertEquals(6, SortOrder.entries.map { it.label }.distinct().size)
+
+    @Test fun markdownShowsOnlyMarkdownFiles() {
+        val list = listOf(
+            PdfFile(1, "a.pdf", "Download", 10, 100),
+            PdfFile(2, "notes.md", "Download", 10, 200, DocumentFormat.Markdown),
+            PdfFile(3, "log.txt", "Download", 10, 300, DocumentFormat.Text),
+        )
+        assertEquals(listOf(2L), LibraryFilters.apply(list, LibraryFilter.Markdown).map { it.id })
+        assertEquals(1, LibraryFilters.counts(list)[LibraryFilter.Markdown])
+        assertEquals(3, LibraryFilters.counts(list)[LibraryFilter.All])
+    }
 }

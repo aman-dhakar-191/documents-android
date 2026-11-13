@@ -215,11 +215,13 @@ object DocxParser {
         val before: Float? = null, val after: Float? = null, val line: LineSpacing? = null,
         val left: Float? = null, val right: Float? = null, val firstLine: Float? = null,
         val sizeHalfPoints: Int? = null, val contextual: Boolean? = null, val font: String? = null,
+        val shading: String? = null, val bottom: BorderSpec? = null,
     ) {
         /** These settings on top of [base]: what this says wins, the rest comes from [base]. */
         fun over(base: StyleProps) = StyleProps(
             before ?: base.before, after ?: base.after, line ?: base.line, left ?: base.left, right ?: base.right,
             firstLine ?: base.firstLine, sizeHalfPoints ?: base.sizeHalfPoints, contextual ?: base.contextual, font ?: base.font,
+            shading ?: base.shading, bottom ?: base.bottom,
         )
     }
 
@@ -269,7 +271,7 @@ object DocxParser {
                 spaceBeforePt = p.before ?: 0f, spaceAfterPt = p.after ?: 0f, line = p.line ?: LineSpacing.Multiple(1f),
                 leftPt = p.left ?: 0f, rightPt = p.right ?: 0f, firstLinePt = p.firstLine ?: 0f,
                 sizeHalfPoints = p.sizeHalfPoints, styleId = styleId ?: defaultParagraphId, contextual = p.contextual ?: false,
-                fontName = p.font,
+                fontName = p.font, shadingHex = p.shading, bottomBorder = p.bottom?.line,
             )
         }
 
@@ -381,6 +383,8 @@ object DocxParser {
                     sizeHalfPoints = rPr?.valOf("sz")?.toIntOrNull()?.takeIf { it in 2..400 },
                     contextual = pPr?.child("contextualSpacing")?.let { it.isOn() },
                     font = fonts?.fontOf(rPr?.child("rFonts")),
+                    shading = hex6(pPr?.child("shd")?.wAttr("fill")),
+                    bottom = readBorder(pPr?.child("pBdr")?.child("bottom")),
                 )
             }
         }
