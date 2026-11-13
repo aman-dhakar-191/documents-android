@@ -46,6 +46,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -264,7 +266,7 @@ private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
                     fontFamily = WordFontFamilies.of(PageLayout.faceOf(p)),
                     textIndent = PageLayout.firstLineIndent(p).takeIf { it != 0f }?.let { TextIndent(firstLine = scale.sp(it), restLine = 0.sp) },
                 ),
-                modifier = Modifier.fillMaxWidth().editable(p, onEdit),
+                modifier = Modifier.fillMaxWidth().editable(p, onEdit).paragraphDecor(p.layout) { scale.dp(it.widthPt) },
             )
         }
         Box(Modifier.weight(1f)) {
@@ -281,24 +283,21 @@ private fun styled(p: DocxParagraph, scale: PageScale, pageInfo: Pair<Int, Int>)
         }
         val color = WordStyle.readableColor(run.colorHex)?.let { Color(("FF" + it).toLong(16)) } ?: Color.Unspecified
         val size = PageLayout.runPt(p, run)
-        withStyle(
-            SpanStyle(
-                fontWeight = if (run.bold || p.headingLevel > 0) FontWeight.Bold else null,
-                fontStyle = if (run.italic) FontStyle.Italic else null,
-                textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
-                fontSize = scale.sp(size),
-                color = color,
-                fontFamily = WordFontFamilies.forName(run.fontName ?: p.layout?.fontName),
-            ),
-        ) {
-            append(
-                when (run.field) {
-                    PageField.Page -> pageInfo.first.toString()
-                    PageField.Pages -> pageInfo.second.toString()
-                    null -> run.text
-                },
-            )
+        val style = SpanStyle(
+            fontWeight = if (run.bold || p.headingLevel > 0) FontWeight.Bold else null,
+            fontStyle = if (run.italic) FontStyle.Italic else null,
+            textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
+            fontSize = scale.sp(size),
+            color = color,
+            fontFamily = WordFontFamilies.forName(run.fontName ?: p.layout?.fontName),
+        )
+        val shown = when (run.field) {
+            PageField.Page -> pageInfo.first.toString()
+            PageField.Pages -> pageInfo.second.toString()
+            null -> run.text
         }
+        val link = run.linkUrl
+        if (link != null) withLink(LinkAnnotation.Url(link)) { withStyle(style) { append(shown) } } else withStyle(style) { append(shown) }
     }
 }
 

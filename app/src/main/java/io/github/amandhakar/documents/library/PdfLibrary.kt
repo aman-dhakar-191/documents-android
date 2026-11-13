@@ -18,12 +18,14 @@ object PdfLibrary {
             FileColumns.DATE_MODIFIED,
             FileColumns.DATA,
         )
-        val selection = "${FileColumns.MIME_TYPE} IN (?, ?, ?, ?, ?) OR ${FileColumns.DISPLAY_NAME} LIKE ? OR " +
+        val selection = "${FileColumns.MIME_TYPE} IN (?, ?, ?, ?, ?, ?, ?) OR ${FileColumns.DISPLAY_NAME} LIKE ? OR " +
             "${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ? OR " +
-            "${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ?"
+            "${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ? OR ${FileColumns.DISPLAY_NAME} LIKE ? OR " +
+            "${FileColumns.DISPLAY_NAME} LIKE ?"
         val selectionArgs = arrayOf(
             "application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME,
-            "%.pdf", "%.html", "%.htm", "%.xhtml", "%.docx", "%.pptx",
+            "text/markdown", "text/x-markdown",
+            "%.pdf", "%.html", "%.htm", "%.xhtml", "%.docx", "%.pptx", "%.md", "%.markdown",
         )
 
         val result = ArrayList<PdfFile>()

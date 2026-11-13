@@ -14,6 +14,8 @@ data class DocxRun(
     val fontName: String? = null,
     /** Set for a page number field: the run's text is only a stand-in, the page shows the real number. */
     val field: PageField? = null,
+    /** An address (http, https or mailto) the text opens when tapped, or null. */
+    val linkUrl: String? = null,
 )
 
 /** How tall a line is: a multiple of the text's natural height (1 = single), at least so many points, or exactly so many. */
@@ -40,6 +42,10 @@ data class ParagraphLayout(
     val contextual: Boolean = false,
     /** The font the style or the document defaults give the text (a theme font resolved to its name), or null. */
     val fontName: String? = null,
+    /** A background colour behind the paragraph (six hex digits), or null. */
+    val shadingHex: String? = null,
+    /** A line under the paragraph, or null. */
+    val bottomBorder: BorderLine? = null,
 )
 
 /** A field the page fills in: the number of this page, or the number of pages. */

@@ -85,4 +85,29 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromFileName("show.ppsx"))
         assertNull(DocumentFormat.fromFileName("template.potx"))
     }
+
+    @Test fun markdownMimeTypes() {
+        assertEquals(DocumentFormat.Markdown, DocumentFormat.fromMimeType("text/markdown"))
+        assertEquals(DocumentFormat.Markdown, DocumentFormat.fromMimeType("text/x-markdown; charset=utf-8"))
+        assertEquals("text/markdown", DocumentFormat.Markdown.mimeType)
+    }
+
+    @Test fun markdownFileNames() {
+        for (name in listOf("README.md", "notes.MD", "a.markdown", "b.mdown", "c.mkd", "d.mkdn")) {
+            assertEquals(name, DocumentFormat.Markdown, DocumentFormat.fromFileName(name))
+        }
+        assertEquals(DocumentFormat.Markdown, DocumentFormat.fromFileName("ANDROID_APP_BRIEF.md"))
+    }
+
+    @Test fun plainTextIsKnownByNameButNotByItsGenericMimeType() {
+        assertNull(DocumentFormat.fromMimeType("text/plain")) // the name decides: it may be a .md the phone calls plain text
+        assertEquals(DocumentFormat.Text, DocumentFormat.fromFileName("log.txt"))
+        assertEquals("text/plain", DocumentFormat.Text.mimeType)
+    }
+
+    @Test fun lookalikeNamesAreNotMarkdown() {
+        assertNull(DocumentFormat.fromFileName("mdfile"))
+        assertNull(DocumentFormat.fromFileName("archive.md.zip"))
+        assertNull(DocumentFormat.fromFileName("readme."))
+    }
 }

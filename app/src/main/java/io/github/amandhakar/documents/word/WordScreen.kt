@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -90,7 +92,9 @@ private fun BlockView(block: DocxBlock) {
 private fun ParagraphView(p: DocxParagraph) {
     val onEdit = LocalWordEdit.current
     if (p.text.isBlank() && p.list == null) {
-        Spacer(Modifier.height(12.dp))
+        // A paragraph with only a line under it is a horizontal rule.
+        if (p.layout?.bottomBorder != null) Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(6.dp).paragraphDecor(p.layout) { it.widthPt.dp })
+        else Spacer(Modifier.height(12.dp))
         return
     }
     val text = remember(p) { styled(p) }
@@ -111,7 +115,8 @@ private fun ParagraphView(p: DocxParagraph) {
             fontWeight = if (p.headingLevel > 0) FontWeight.Bold else null,
             fontFamily = WordFontFamilies.of(PageLayout.faceOf(p)),
             textAlign = align,
-            modifier = Modifier.fillMaxWidth().editable(p, onEdit).padding(top = top, bottom = 2.dp),
+            modifier = Modifier.fillMaxWidth().editable(p, onEdit).paragraphDecor(p.layout) { it.widthPt.dp }
+                .padding(top = top, bottom = 2.dp).padding(horizontal = if (p.layout?.shadingHex != null) 8.dp else 0.dp),
         )
     }
     // Selecting text and tapping to edit would fight over the touch, so selection is off while editing.
@@ -136,8 +141,7 @@ private fun styled(p: DocxParagraph): AnnotatedString = buildAnnotatedString {
             if (run.strike) add(TextDecoration.LineThrough)
         }
         val color = WordStyle.readableColor(run.colorHex)?.let { Color(("FF" + it).toLong(16)) } ?: Color.Unspecified
-        withStyle(
-            SpanStyle(
+        val style = SpanStyle(
                 fontWeight = if (run.bold) FontWeight.Bold else null,
                 fontStyle = if (run.italic) FontStyle.Italic else null,
                 textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
@@ -145,8 +149,10 @@ private fun styled(p: DocxParagraph): AnnotatedString = buildAnnotatedString {
                 fontSize = if (p.headingLevel == 0 && run.sizeHalfPoints != null) WordStyle.runSizeSp(run.sizeHalfPoints).sp else androidx.compose.ui.unit.TextUnit.Unspecified,
                 color = color,
                 fontFamily = WordFontFamilies.forName(run.fontName ?: p.layout?.fontName),
-            ),
-        ) { append(run.text) }
+            )
+        val link = run.linkUrl
+        // A tappable address (only http, https and mailto get this far, see the Markdown reader).
+        if (link != null) withLink(LinkAnnotation.Url(link)) { withStyle(style) { append(run.text) } } else withStyle(style) { append(run.text) }
     }
 }
 

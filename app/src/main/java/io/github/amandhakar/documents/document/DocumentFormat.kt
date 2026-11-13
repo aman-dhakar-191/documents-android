@@ -8,7 +8,9 @@ enum class DocumentFormat {
     Pdf,
     Html,
     Docx,
-    Pptx;
+    Pptx,
+    Markdown,
+    Text;
 
     /** The MIME type to use when handing a file of this format to another app. */
     val mimeType: String
@@ -17,6 +19,8 @@ enum class DocumentFormat {
             Html -> "text/html"
             Docx -> DOCX_MIME
             Pptx -> PPTX_MIME
+            Markdown -> "text/markdown"
+            Text -> "text/plain"
         }
 
     companion object {
@@ -31,6 +35,7 @@ enum class DocumentFormat {
                 "text/html", "application/xhtml+xml" -> Html
                 DOCX_MIME -> Docx
                 PPTX_MIME -> Pptx
+                "text/markdown", "text/x-markdown", "text/x-web-markdown" -> Markdown
                 else -> null
             }
         }
@@ -43,6 +48,8 @@ enum class DocumentFormat {
                 "html", "htm", "xhtml" -> Html
                 "docx" -> Docx
                 "pptx" -> Pptx
+                "md", "markdown", "mdown", "mkd", "mkdn" -> Markdown
+                "txt", "text" -> Text
                 else -> null
             }
         }

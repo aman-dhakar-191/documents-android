@@ -135,6 +135,8 @@ fun DocumentsApp(
     var editingSlide by remember { mutableStateOf<Pair<PptxSlide, PptxParagraph>?>(null) }
     var askOfficeSave by rememberSaveable { mutableStateOf(false) }
     var showFontLicences by rememberSaveable { mutableStateOf(false) }
+    // A Markdown file: rendered (the default) or its source.
+    var showSource by rememberSaveable { mutableStateOf(false) }
     var askOfficeDiscard by rememberSaveable { mutableStateOf(false) }
     // Scripts in a web page are off until the person turns them on (per opening).
     var allowScripts by rememberSaveable { mutableStateOf(false) }
@@ -152,6 +154,7 @@ fun DocumentsApp(
 
     fun openOurselves(uri: Uri) {
         wordZoom = 1f
+        showSource = false
         openedFromOutside = false
         allowScripts = false
         allowOnline = false
@@ -236,7 +239,7 @@ fun DocumentsApp(
     val scope = rememberCoroutineScope()
     val exportPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { target ->
         val current = state
-        if (target != null && !exporting && (current is ViewerState.Docx || current is ViewerState.Pptx)) {
+        if (target != null && !exporting && (current is ViewerState.Docx || current is ViewerState.Pptx || (current is ViewerState.Text && current.document != null))) {
             exporting = true
             scope.launch {
                 val failure = withContext(Dispatchers.IO) {
@@ -246,6 +249,7 @@ fun DocumentsApp(
                             when (current) {
                                 is ViewerState.Docx -> WordPdfExporter.export(current.document, out, WordTypefaces(context))
                                 is ViewerState.Pptx -> SlidesPdfExporter.export(current.deck, out)
+                                is ViewerState.Text -> current.document?.let { WordPdfExporter.export(it, out, WordTypefaces(context)) }
                                 else -> Unit
                             }
                         }
@@ -527,7 +531,7 @@ fun DocumentsApp(
                         onCloseSearch = closeSearch,
                         sort = librarySort,
                         onSort = { libraryViewModel.setSort(it) },
-                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME)) },
+                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME, "text/markdown", "text/x-markdown", "text/plain")) },
                     )
                 } else if (state is ViewerState.Web && findOpen) {
                     WebFindBar(
@@ -606,6 +610,50 @@ fun DocumentsApp(
                                         if (!shared) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
                                     },
                                 )
+                            }
+                        },
+                    )
+                } else if (state is ViewerState.Text) {
+                    TopAppBar(
+                        expandedHeight = 48.dp,
+                        title = {},
+                        navigationIcon = {
+                            IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
+                        },
+                        actions = {
+                            val text = state as ViewerState.Text
+                            if (text.document != null) CompactButton(if (showSource) "Rendered" else "Source") { showSource = !showSource }
+                            var textMenu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { textMenu = true }) { Icon(DocIcons.MoreVert, contentDescription = "More options") }
+                            DropdownMenu(expanded = textMenu, onDismissRequest = { textMenu = false }) {
+                                if (text.document != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Save as PDF") },
+                                        enabled = !exporting,
+                                        onClick = {
+                                            textMenu = false
+                                            exportPdf.launch(ExportNames.pdfName(displayNameOf(context, text.uri)))
+                                        },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Share") },
+                                    leadingIcon = { Icon(DocIcons.Share, contentDescription = null) },
+                                    onClick = {
+                                        textMenu = false
+                                        val mime = if (text.document != null) DocumentFormat.Markdown.mimeType else DocumentFormat.Text.mimeType
+                                        if (!ShareFiles.shareFiles(context, listOf(text.uri), mime)) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
+                                    },
+                                )
+                                if (text.document != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Font licences") },
+                                        onClick = {
+                                            textMenu = false
+                                            showFontLicences = true
+                                        },
+                                    )
+                                }
                             }
                         },
                     )
@@ -783,6 +831,7 @@ fun DocumentsApp(
                             if (wordPages) WordPagesScreen(shown, wordZoom) else WordScreen(shown)
                         }
                     }
+                    is ViewerState.Text -> TextFileScreen(s.source, s.document, s.truncated, showSource || s.document == null)
                     is ViewerState.Pptx -> {
                         val shown = remember(s.deck, officeEdit.pptx) { PptxEditModel.apply(s.deck, officeEdit.pptx) }
                         val onTap: ((PptxSlide, PptxParagraph) -> Unit)? = if (officeEdit.editing) ({ slide, p -> editingSlide = slide to p }) else null

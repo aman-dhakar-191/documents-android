@@ -137,6 +137,19 @@ class ParagraphLayoutParsingTest {
         assertEquals(5f, first(parseWith(p("a", "<w:pStyle w:val=\"Loop\"/>"), styles)).layout!!.spaceAfterPt, 0f)
     }
 
+    @Test fun paragraphShadingAndALineUnderAreRead() {
+        val styles = style("Normal", "Normal", "", default = true) +
+            style("Title", "Title", "<w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"8\" w:space=\"4\" w:color=\"4F81BD\"/></w:pBdr></w:pPr>", based = "Normal")
+        val styled = first(parseWith(p("t", "<w:pStyle w:val=\"Title\"/>"), styles)).layout!!
+        assertEquals(BorderLine(1f, "4F81BD"), styled.bottomBorder)
+        val shaded = first(parseWith(p("c", "<w:shd w:val=\"clear\" w:fill=\"F2F2F2\"/>"), styles)).layout!!
+        assertEquals("F2F2F2", shaded.shadingHex)
+        assertNull(shaded.bottomBorder)
+        val none = first(parseWith(p("n", "<w:pStyle w:val=\"Title\"/><w:pBdr><w:bottom w:val=\"nil\"/></w:pBdr>"), styles)).layout!!
+        assertNull(none.bottomBorder)
+        assertNull(first(parseWith(p("x", "<w:shd w:fill=\"nothex\"/>"), styles)).layout!!.shadingHex)
+    }
+
     @Test fun layoutSurvivesEditingAndSplitting() {
         val l = first(parseWith(p("alpha beta gamma delta", "<w:spacing w:before=\"200\"/>"), style("Normal", "Normal", "", default = true)))
         val (a, b) = PageLayout.split(l, 8)

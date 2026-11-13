@@ -13,6 +13,11 @@ class ExportNamesTest {
         assertEquals("page.pdf", ExportNames.pdfName("page.html"))
     }
 
+    @Test fun markdownNamesLoseTheirEnding() {
+        assertEquals("README.pdf", ExportNames.pdfName("README.md"))
+        assertEquals("notes.pdf", ExportNames.pdfName("notes.markdown"))
+    }
+
     @Test fun keepsOtherDotsInTheName() = assertEquals("a.b.c.pdf", ExportNames.pdfName("a.b.c.docx"))
 
     @Test fun anAlreadyPdfNameIsNotDoubled() = assertEquals("x.pdf", ExportNames.pdfName("x.pdf"))
