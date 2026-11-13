@@ -29,6 +29,10 @@ data class DocxParagraph(
     val pageBreakBefore: Boolean = false,
     /** A page break comes after this paragraph's text. */
     val pageBreakAfter: Boolean = false,
+    /** Which `w:p` of document.xml this is (0-based, in document order), so an edit can find it again; -1 when made up. */
+    val id: Int = -1,
+    /** False for a paragraph that holds a field (page number, contents, a link field...) which editing the text would break. */
+    val editable: Boolean = true,
 ) : DocxBlock {
     val text: String get() = runs.joinToString("") { it.text }
 }

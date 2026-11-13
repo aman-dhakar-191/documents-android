@@ -91,6 +91,8 @@ private class SlideCtx(
     val master: Element?,
     val rels: Map<String, RelationshipInfo>,
     val colors: ThemeColors,
+    /** Every a:p of the slide in document order, so each paragraph read can say which one it is. */
+    val paragraphIds: java.util.IdentityHashMap<Element, Int>,
 )
 
 private class DeckReader(val parts: OoxmlParts, val defaultText: Element?, val limits: PptxLimits) {
@@ -135,12 +137,15 @@ private class DeckReader(val parts: OoxmlParts, val defaultText: Element?, val l
         val master = masterPath?.let { root(it) }
         val themePath = masterPath?.let { rels(it) }?.values?.firstOrNull { it.type == "theme" }?.path
         val colors = colorsFor(themePath, master)
-        val ctx = SlideCtx(layout, master, rels, colors)
+        val ids = java.util.IdentityHashMap<Element, Int>()
+        val allParagraphs = slide.getElementsByTagNameNS(A, "p")
+        for (i in 0 until allParagraphs.length) ids[allParagraphs.item(i) as Element] = i
+        val ctx = SlideCtx(layout, master, rels, colors, ids)
         val background = background(slide, colors) ?: background(layout, colors) ?: background(master, colors) ?: "FFFFFF"
         val shapes = ArrayList<PptxShape>()
         val tree = slide.kid(P, "cSld")?.kid(P, "spTree")
         if (tree != null) readTree(tree, ctx, { it }, shapes)
-        return PptxSlide(shapes, background, notesOf(rels))
+        return PptxSlide(shapes, background, notesOf(rels), path)
     }
 
     private fun background(root: Element?, colors: ThemeColors): String? {
@@ -227,7 +232,7 @@ private class DeckReader(val parts: OoxmlParts, val defaultText: Element?, val l
         val widths = tbl.kid(A, "tblGrid")?.kids(A, "gridCol")?.map { it.attr("w")?.toLongOrNull() ?: 0L } ?: emptyList()
         val rows = tbl.kids(A, "tr").map { tr ->
             val cells = tr.kids(A, "tc").map { tc ->
-                val paragraphs = readParagraphs(tc.kid(A, "txBody"), listOf(null, defaultText), null, 1f, ctx.colors)
+                val paragraphs = readParagraphs(tc.kid(A, "txBody"), listOf(null, defaultText), null, 1f, ctx.colors, ctx.paragraphIds)
                 PptxTableCell(paragraphs, ctx.colors.colorOf(tc.kid(A, "tcPr")?.kid(A, "solidFill")))
             }
             PptxTableRow(tr.attr("h")?.toLongOrNull() ?: 0L, cells)
@@ -289,7 +294,7 @@ private class DeckReader(val parts: OoxmlParts, val defaultText: Element?, val l
         val style = sp.kid(P, "style")
         // An autoshape's style gives its text a colour (usually white, to show on the shape's fill).
         val styleTextColor = if (ph == null) ctx.colors.colorOf(style?.kid(A, "fontRef")) else null
-        val paragraphs = readParagraphs(tx, sources, styleTextColor, fontScale, ctx.colors)
+        val paragraphs = readParagraphs(tx, sources, styleTextColor, fontScale, ctx.colors, ctx.paragraphIds)
         val fill = when {
             spPr?.kid(A, "noFill") != null -> null
             spPr?.kid(A, "solidFill") != null -> ctx.colors.colorOf(spPr.kid(A, "solidFill"))
@@ -331,6 +336,7 @@ private class DeckReader(val parts: OoxmlParts, val defaultText: Element?, val l
         defaultColor: String?,
         scale: Float,
         colors: ThemeColors,
+        ids: java.util.IdentityHashMap<Element, Int>,
     ): List<PptxParagraph> {
         if (tx == null) return emptyList()
         val counters = IntArray(9)
@@ -374,7 +380,7 @@ private class DeckReader(val parts: OoxmlParts, val defaultText: Element?, val l
                     "br" -> runs += run("\n", listOfNotNull(child.kid(A, "rPr")) + rSourcesBase, defaultColor, scale, colors)
                 }
             }
-            out += PptxParagraph(mergeRuns(runs.filter { it.text.isNotEmpty() }), align, lvl, bullet)
+            out += PptxParagraph(mergeRuns(runs.filter { it.text.isNotEmpty() }), align, lvl, bullet, ids[p] ?: -1, editable = p.getElementsByTagNameNS(A, "fld").length == 0)
         }
         return out
     }

@@ -45,7 +45,11 @@ object DocxParser {
         val rels = parts.xml[RELS]?.let { parseRels(it) } ?: emptyMap()
         val doc = dom(documentXml)
         val body = doc.documentElement.children("body").firstOrNull() ?: throw DocxException("The document has no body.")
-        val reader = BodyReader(styles, numbering, rels, parts.media, limits)
+        // Every w:p in document order, so each paragraph read can say which one it is (editing finds it by this number).
+        val ids = java.util.IdentityHashMap<Element, Int>()
+        val all = doc.getElementsByTagNameNS(W, "p")
+        for (i in 0 until all.length) ids[all.item(i) as Element] = i
+        val reader = BodyReader(styles, numbering, rels, parts.media, limits, ids)
         reader.readBlocks(body)
         return DocxDocument(reader.blocks, reader.truncated, readPage(body.child("sectPr")))
     }
@@ -214,6 +218,7 @@ object DocxParser {
         private val rels: Map<String, String>,
         private val media: Map<String, ByteArray>,
         private val limits: DocxLimits,
+        private val ids: java.util.IdentityHashMap<Element, Int>,
     ) {
         val blocks = ArrayList<DocxBlock>()
         var truncated = false
@@ -296,7 +301,7 @@ object DocxParser {
                 images.forEachIndexed { i, image -> out += if (i == 0 && breakBefore) DocxImage(image.name, image.bytes, pageBreakBefore = true) else image }
                 if (flags.pageBreak) out += DocxParagraph(emptyList(), pageBreakAfter = true)
             } else {
-                out += DocxParagraph(mergeRuns(runs), heading, list, align, pageBreakBefore = breakBefore, pageBreakAfter = flags.pageBreak)
+                out += DocxParagraph(mergeRuns(runs), heading, list, align, pageBreakBefore = breakBefore, pageBreakAfter = flags.pageBreak, id = ids[p] ?: -1, editable = !hasField(p))
                 out += images
             }
         }
@@ -305,6 +310,11 @@ object DocxParser {
         private class RunFlags {
             var pageBreak = false
         }
+
+        /** True when the paragraph holds a field: editing its text could break the field. */
+        private fun hasField(p: Element): Boolean =
+            p.getElementsByTagNameNS(W, "fldChar").length > 0 || p.getElementsByTagNameNS(W, "instrText").length > 0 ||
+                p.getElementsByTagNameNS(W, "fldSimple").length > 0
 
         private fun collectRuns(parent: Element, runs: MutableList<DocxRun>, images: MutableList<DocxImage>, flags: RunFlags) {
             for (e in parent.childElements()) {

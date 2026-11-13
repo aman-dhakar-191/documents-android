@@ -16,7 +16,16 @@ data class PptxRun(
 enum class PptxAlign { Start, Center, End, Justify }
 
 /** One paragraph; [bullet] is the bullet or number text in front of it, or null. [level] is 0 for the top level. */
-data class PptxParagraph(val runs: List<PptxRun>, val align: PptxAlign, val level: Int, val bullet: String?) {
+data class PptxParagraph(
+    val runs: List<PptxRun>,
+    val align: PptxAlign,
+    val level: Int,
+    val bullet: String?,
+    /** Which `a:p` of its slide's XML this is (0-based, in document order), so an edit can find it again; -1 when made up. */
+    val id: Int = -1,
+    /** False for a paragraph that holds a field (slide number, date) which editing the text would break. */
+    val editable: Boolean = true,
+) {
     val text: String get() = runs.joinToString("") { it.text }
 }
 
@@ -49,7 +58,7 @@ class PptxTable(override val box: EmuBox, val columnWidthsEmu: List<Long>, val r
 /** Something that is part of the slide but isn't drawn (a chart, SmartArt, an object): a labelled grey box, never dropped silently. */
 class PptxNotShown(override val box: EmuBox, val label: String) : PptxShape
 
-class PptxSlide(val shapes: List<PptxShape>, val backgroundHex: String, val notes: String) {
+class PptxSlide(val shapes: List<PptxShape>, val backgroundHex: String, val notes: String, val path: String = "") {
     /** The slide's text, one paragraph per line (table cells separated by tabs). */
     fun plainText(): String = shapes.flatMap { shape ->
         when (shape) {

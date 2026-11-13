@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -61,6 +62,15 @@ import io.github.amandhakar.documents.convert.ConvertException
 import io.github.amandhakar.documents.convert.ConvertOutcome
 import io.github.amandhakar.documents.convert.PdfConverter
 import io.github.amandhakar.documents.export.ExportNames
+import io.github.amandhakar.documents.OfficeEditViewModel
+import io.github.amandhakar.documents.officeedit.DocxEditModel
+import io.github.amandhakar.documents.officeedit.OfficeEditMessages
+import io.github.amandhakar.documents.officeedit.PptxEditModel
+import io.github.amandhakar.documents.slides.LocalSlideEdit
+import io.github.amandhakar.documents.slides.PptxParagraph
+import io.github.amandhakar.documents.slides.PptxSlide
+import io.github.amandhakar.documents.word.DocxParagraph
+import io.github.amandhakar.documents.word.LocalWordEdit
 import io.github.amandhakar.documents.export.SlidesPdfExporter
 import io.github.amandhakar.documents.export.WordPdfExporter
 import io.github.amandhakar.documents.web.FindText
@@ -100,11 +110,13 @@ fun DocumentsApp(
     viewModel: DocumentViewModel = viewModel(),
     libraryViewModel: LibraryViewModel = viewModel(),
     editViewModel: EditViewModel = viewModel(),
+    officeEditViewModel: OfficeEditViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val libraryState by libraryViewModel.state.collectAsState()
     val selectedIds by libraryViewModel.selected.collectAsState()
     val edit by editViewModel.state.collectAsState()
+    val officeEdit by officeEditViewModel.state.collectAsState()
     val query by libraryViewModel.query.collectAsState()
     val librarySort by libraryViewModel.sort.collectAsState()
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -118,6 +130,11 @@ fun DocumentsApp(
     var askSaveChoice by rememberSaveable { mutableStateOf(false) }
     var askDiscard by rememberSaveable { mutableStateOf(false) }
     var askNewText by rememberSaveable { mutableStateOf(false) }
+    // Editing a Word file or presentation: which paragraph is open in the dialog, and the save and discard prompts.
+    var editingWord by remember { mutableStateOf<DocxParagraph?>(null) }
+    var editingSlide by remember { mutableStateOf<Pair<PptxSlide, PptxParagraph>?>(null) }
+    var askOfficeSave by rememberSaveable { mutableStateOf(false) }
+    var askOfficeDiscard by rememberSaveable { mutableStateOf(false) }
     // Scripts in a web page are off until the person turns them on (per opening).
     var allowScripts by rememberSaveable { mutableStateOf(false) }
     // Online parts of a web page (pictures, styles) load only after the person allows it, per opening.
@@ -140,6 +157,7 @@ fun DocumentsApp(
         findOpen = false
         findQuery = ""
         editViewModel.clearEdits()
+        officeEditViewModel.reset()
         viewModel.open(uri)
     }
 
@@ -151,6 +169,7 @@ fun DocumentsApp(
             openedFromOutside = true
             libraryViewModel.clearSelection()
             editViewModel.clearEdits()
+            officeEditViewModel.reset()
             allowScripts = false
             allowOnline = false
             findOpen = false
@@ -167,6 +186,7 @@ fun DocumentsApp(
     }
     val leaveViewer: () -> Unit = {
         editViewModel.clearEdits()
+        officeEditViewModel.reset()
         when (BackNavigation.fromViewer(openedFromOutside)) {
             BackTarget.ExitApp -> onExit() // the document is closed when the screen is destroyed
             BackTarget.Library -> toLibrary()
@@ -178,6 +198,8 @@ fun DocumentsApp(
             edit.placing != null -> editViewModel.cancelPlacing()
             edit.toolActive -> editViewModel.exitTools()
             edit.hasPending -> askDiscard = true
+            officeEdit.hasChanges -> askOfficeDiscard = true
+            officeEdit.editing -> officeEditViewModel.setEditing(false)
             else -> leaveViewer()
         }
     }
@@ -187,6 +209,25 @@ fun DocumentsApp(
         val source = viewModel.openUri()
         if (target != null && source != null) {
             editViewModel.save(source, target, eraseOld) { saved -> if (saved) openOurselves(target) }
+        }
+    }
+    // Saving Word / PowerPoint edits as a new copy. The new copy is then the file on screen.
+    val saveWordCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DocumentFormat.DOCX_MIME)) { target ->
+        val current = state
+        if (target != null && current is ViewerState.Docx) {
+            officeEditViewModel.saveWord(current.uri, target, current.document) { saved -> if (saved) openOurselves(target) }
+        }
+    }
+    val savePptxCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DocumentFormat.PPTX_MIME)) { target ->
+        val current = state
+        if (target != null && current is ViewerState.Pptx) {
+            officeEditViewModel.savePowerPoint(current.uri, target, current.deck) { saved -> if (saved) openOurselves(target) }
+        }
+    }
+    LaunchedEffect(officeEdit.message) {
+        officeEdit.message?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            officeEditViewModel.messageShown()
         }
     }
     // Save a Word file or presentation as a PDF: the person picks where, then it is written off the main thread.
@@ -406,6 +447,60 @@ fun DocumentsApp(
                 onDismiss = { convertTarget = null },
             )
         }
+        editingWord?.let { p ->
+            EditTextDialog(
+                title = "Change paragraph",
+                initial = p.text,
+                onApply = { editingWord = null; officeEditViewModel.replaceWord(p.id, it) },
+                onDismiss = { editingWord = null },
+                onDelete = { editingWord = null; officeEditViewModel.deleteWord(p.id) },
+                onAddBelow = { editingWord = null; officeEditViewModel.insertWordAfter(p.id, it) },
+            )
+        }
+        editingSlide?.let { (slide, p) ->
+            EditTextDialog(
+                title = "Change text",
+                initial = officeEdit.pptx.textOf(slide.path, p.id) ?: p.text,
+                onApply = { editingSlide = null; officeEditViewModel.replaceSlide(slide.path, p.id, it) },
+                onDismiss = { editingSlide = null },
+            )
+        }
+        if (askOfficeSave) {
+            SaveSheet(
+                summary = OfficeEditMessages.changes(officeEdit.changeCount),
+                showErase = false,
+                eraseOld = false,
+                onEraseChange = {},
+                onSaveCopy = {
+                    askOfficeSave = false
+                    val name = displayNameOf(context, viewModel.openUri())
+                    if (state is ViewerState.Pptx) savePptxCopy.launch(SaveNames.signedName(name)) else saveWordCopy.launch(SaveNames.signedName(name))
+                },
+                onReplace = {
+                    askOfficeSave = false
+                    when (val current = state) {
+                        is ViewerState.Docx -> officeEditViewModel.saveWord(current.uri, null, current.document) { saved -> if (saved) viewModel.reopen() }
+                        is ViewerState.Pptx -> officeEditViewModel.savePowerPoint(current.uri, null, current.deck) { saved -> if (saved) viewModel.reopen() }
+                        else -> Unit
+                    }
+                },
+                onDismiss = { askOfficeSave = false },
+            )
+        }
+        if (askOfficeDiscard) {
+            AlertDialog(
+                onDismissRequest = { askOfficeDiscard = false },
+                title = { Text("Discard changes?") },
+                text = { Text("You haven't saved the ${OfficeEditMessages.changes(officeEdit.changeCount)} you made.") },
+                confirmButton = {
+                    Button(onClick = {
+                        askOfficeDiscard = false
+                        leaveViewer()
+                    }) { Text("Discard") }
+                },
+                dismissButton = { TextButton(onClick = { askOfficeDiscard = false }) { Text("Keep editing") } },
+            )
+        }
         if (askDiscard) {
             AlertDialog(
                 onDismissRequest = { askDiscard = false },
@@ -462,6 +557,12 @@ fun DocumentsApp(
                             IconButton(onClick = goBack) { Icon(DocIcons.ArrowBack, contentDescription = "Back") }
                         },
                         actions = {
+                            if (officeEdit.hasChanges) {
+                                CompactButton("Save \u00b7 ${officeEdit.changeCount}", enabled = !officeEdit.saving) { askOfficeSave = true }
+                            }
+                            CompactButton(if (officeEdit.editing) "Done" else "Edit", enabled = !officeEdit.saving) {
+                                officeEditViewModel.setEditing(!officeEdit.editing)
+                            }
                             if (state is ViewerState.Docx) {
                                 if (wordPages) {
                                     CompactButton("\u2212", enabled = wordZoom > Zoom.MIN) { wordZoom = Zoom.zoomOut(wordZoom) }
@@ -478,6 +579,15 @@ fun DocumentsApp(
                             var officeMenu by remember { mutableStateOf(false) }
                             IconButton(onClick = { officeMenu = true }) { Icon(DocIcons.MoreVert, contentDescription = "More options") }
                             DropdownMenu(expanded = officeMenu, onDismissRequest = { officeMenu = false }) {
+                                if (officeEdit.hasChanges) {
+                                    DropdownMenuItem(
+                                        text = { Text("Undo last change") },
+                                        onClick = {
+                                            officeMenu = false
+                                            officeEditViewModel.undo()
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Save as PDF") },
                                     enabled = !exporting,
@@ -664,8 +774,19 @@ fun DocumentsApp(
                         onOpen = { openOurselves(it) },
                     )
                     ViewerState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    is ViewerState.Docx -> if (wordPages) WordPagesScreen(s.document, wordZoom) else WordScreen(s.document)
-                    is ViewerState.Pptx -> SlideScreen(deck = s.deck)
+                    is ViewerState.Docx -> {
+                        // What is shown includes the changes made so far; the file itself is only written on Save.
+                        val shown = remember(s.document, officeEdit.docx) { DocxEditModel.apply(s.document, officeEdit.docx) }
+                        val onTap: ((DocxParagraph) -> Unit)? = if (officeEdit.editing) ({ p -> editingWord = p }) else null
+                        CompositionLocalProvider(LocalWordEdit provides onTap) {
+                            if (wordPages) WordPagesScreen(shown, wordZoom) else WordScreen(shown)
+                        }
+                    }
+                    is ViewerState.Pptx -> {
+                        val shown = remember(s.deck, officeEdit.pptx) { PptxEditModel.apply(s.deck, officeEdit.pptx) }
+                        val onTap: ((PptxSlide, PptxParagraph) -> Unit)? = if (officeEdit.editing) ({ slide, p -> editingSlide = slide to p }) else null
+                        CompositionLocalProvider(LocalSlideEdit provides onTap) { SlideScreen(deck = shown) }
+                    }
                     is ViewerState.Web -> WebDocumentScreen(
                         uri = s.uri,
                         allowScripts = allowScripts,

@@ -83,6 +83,7 @@ private fun BlockView(block: DocxBlock) {
 
 @Composable
 private fun ParagraphView(p: DocxParagraph) {
+    val onEdit = LocalWordEdit.current
     if (p.text.isBlank() && p.list == null) {
         Spacer(Modifier.height(12.dp))
         return
@@ -96,18 +97,20 @@ private fun ParagraphView(p: DocxParagraph) {
     }
     val size = if (p.headingLevel > 0) WordStyle.headingSizeSp(p.headingLevel) else WordStyle.BODY_SP
     val top = if (p.headingLevel > 0) 14.dp else 2.dp
-    val content: @Composable () -> Unit = {
-        SelectionContainer {
-            Text(
-                text,
-                color = PageInk,
-                fontSize = size.sp,
-                lineHeight = (size * 1.4f).sp,
-                fontWeight = if (p.headingLevel > 0) FontWeight.Bold else null,
-                textAlign = align,
-                modifier = Modifier.padding(top = top, bottom = 2.dp),
-            )
-        }
+    val inner: @Composable () -> Unit = {
+        Text(
+            text,
+            color = PageInk,
+            fontSize = size.sp,
+            lineHeight = (size * 1.4f).sp,
+            fontWeight = if (p.headingLevel > 0) FontWeight.Bold else null,
+            textAlign = align,
+            modifier = Modifier.fillMaxWidth().editable(p, onEdit).padding(top = top, bottom = 2.dp),
+        )
+    }
+    // Selecting text and tapping to edit would fight over the touch, so selection is off while editing.
+    val content: @Composable () -> Unit = if (canEdit(p, onEdit)) inner else {
+        { SelectionContainer { inner() } }
     }
     val list = p.list
     if (list == null) {

@@ -135,6 +135,7 @@ private fun PageBlock(block: DocxBlock, setup: PageSetup, scale: PageScale, widt
 
 @Composable
 private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
+    val onEdit = LocalWordEdit.current
     val font = PageLayout.fontPt(p)
     val text = remember(p, scale.dpPerPt) { styled(p, scale) }
     val align = when (p.align) {
@@ -150,12 +151,16 @@ private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
         if (p.list != null) {
             Text(p.list.label, color = PageInk, fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)), modifier = Modifier.width(scale.dp(PageLayout.LIST_INDENT)))
         }
-        SelectionContainer(Modifier.weight(1f)) {
+        val body: @Composable () -> Unit = {
             Text(
                 text,
                 color = PageInk,
                 style = TextStyle(fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)), textAlign = align),
+                modifier = Modifier.fillMaxWidth().editable(p, onEdit),
             )
+        }
+        Box(Modifier.weight(1f)) {
+            if (canEdit(p, onEdit)) body() else SelectionContainer { body() }
         }
     }
 }

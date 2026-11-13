@@ -3,6 +3,7 @@ package io.github.amandhakar.documents.slides
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,6 +53,10 @@ import kotlinx.coroutines.withContext
 
 private fun hex(h: String): Color = Color(("FF$h").toLong(16))
 
+/** Set while a presentation is being edited: called with the slide and the paragraph the person tapped. Null when just viewing. */
+val LocalSlideEdit = androidx.compose.runtime.staticCompositionLocalOf<((PptxSlide, PptxParagraph) -> Unit)?> { null }
+private val LocalSlide = androidx.compose.runtime.staticCompositionLocalOf<PptxSlide?> { null }
+
 /** A presentation as a scrolling list of slides drawn to scale, each under a "3 / 8" caption and its speaker notes. */
 @Composable
 fun SlideScreen(deck: PptxDeck, modifier: Modifier = Modifier) {
@@ -98,8 +103,10 @@ private fun SlideView(deck: PptxDeck, slide: PptxSlide) {
         val pxPerEmu = widthPx / deck.widthEmu
         val heightDp = with(density) { (deck.heightEmu * pxPerEmu).toDp() }
         val scale = Scale(pxPerEmu, density.density, density.fontScale)
-        Box(Modifier.fillMaxWidth().size(maxWidth, heightDp).clip(RectangleShape)) {
-            for (shape in slide.shapes) ShapeView(shape, scale)
+        androidx.compose.runtime.CompositionLocalProvider(LocalSlide provides slide) {
+            Box(Modifier.fillMaxWidth().size(maxWidth, heightDp).clip(RectangleShape)) {
+                for (shape in slide.shapes) ShapeView(shape, scale)
+            }
         }
     }
 }
@@ -155,6 +162,9 @@ private fun TextShape(shape: PptxText, scale: Scale, place: Modifier) {
 
 @Composable
 private fun ParagraphView(p: PptxParagraph, scale: Scale) {
+    val onEdit = LocalSlideEdit.current
+    val slide = LocalSlide.current
+    val tappable = onEdit != null && slide != null && p.editable && p.id >= 0
     val first = p.runs.firstOrNull()
     val size = first?.sizePt ?: 18f
     val indent = scale.dp(p.level * 342900L)
@@ -166,10 +176,13 @@ private fun ParagraphView(p: PptxParagraph, scale: Scale) {
         PptxAlign.Start -> TextAlign.Start
     }
     if (p.runs.isEmpty()) {
-        Box(Modifier.size(1.dp, scale.dp((size * 12700L * 1.2f).toLong())))
+        // An empty paragraph is still a target while editing, so text can be typed into it.
+        val gap = Modifier.size(if (tappable) 48.dp else 1.dp, scale.dp((size * 12700L * 1.2f).toLong()))
+        Box(if (tappable) gap.background(Color(0x142B6BE8)).clickable { onEdit!!(slide!!, p) } else gap)
         return
     }
-    Row(Modifier.padding(start = indent)) {
+    val tap = if (tappable) Modifier.background(Color(0x142B6BE8)).clickable { onEdit!!(slide!!, p) } else Modifier
+    Row(Modifier.padding(start = indent).then(tap)) {
         if (p.bullet != null) {
             Text(p.bullet, color = hex(first?.colorHex ?: "000000"), fontSize = scale.sp(size), modifier = Modifier.width(scale.dp((size * 12700L * 1.1f).toLong())))
         }
