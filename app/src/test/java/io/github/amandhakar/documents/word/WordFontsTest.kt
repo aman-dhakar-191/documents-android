@@ -63,6 +63,67 @@ class WordFontsTest {
     }
 }
 
+/** A tiny TrueType reader: just enough (head, hhea, hmtx, a format 4 cmap) to read a character's advance width. */
+private class TtfAdvances(bytes: ByteArray) {
+    private val buf = java.nio.ByteBuffer.wrap(bytes)
+    private val tables = HashMap<String, Int>()
+    val unitsPerEm: Int
+    private val metricCount: Int
+    private var cmapFormat4 = -1
+
+    init {
+        val count = buf.getShort(4).toInt() and 0xFFFF
+        for (i in 0 until count) {
+            val at = 12 + i * 16
+            val tag = String(bytes, at, 4, Charsets.US_ASCII)
+            tables[tag] = buf.getInt(at + 8)
+        }
+        unitsPerEm = buf.getShort(tables.getValue("head") + 18).toInt() and 0xFFFF
+        metricCount = buf.getShort(tables.getValue("hhea") + 34).toInt() and 0xFFFF
+        val cmap = tables.getValue("cmap")
+        val subtables = buf.getShort(cmap + 2).toInt() and 0xFFFF
+        for (i in 0 until subtables) {
+            val platform = buf.getShort(cmap + 4 + i * 8).toInt() and 0xFFFF
+            val encoding = buf.getShort(cmap + 6 + i * 8).toInt() and 0xFFFF
+            val offset = buf.getInt(cmap + 8 + i * 8)
+            if (platform == 3 && encoding == 1 && (buf.getShort(cmap + offset).toInt() and 0xFFFF) == 4) cmapFormat4 = cmap + offset
+        }
+        require(cmapFormat4 >= 0) { "no format 4 cmap" }
+    }
+
+    private fun u16(at: Int) = buf.getShort(at).toInt() and 0xFFFF
+
+    /** The glyph for a BMP codepoint, or 0 when the font has none. */
+    private fun glyph(cp: Int): Int {
+        val segX2 = u16(cmapFormat4 + 6)
+        val endCodes = cmapFormat4 + 14
+        val startCodes = endCodes + segX2 + 2
+        val deltas = startCodes + segX2
+        val rangeOffsets = deltas + segX2
+        for (i in 0 until segX2 / 2) {
+            if (cp <= u16(endCodes + i * 2)) {
+                val start = u16(startCodes + i * 2)
+                if (cp < start) return 0
+                val delta = u16(deltas + i * 2)
+                val offset = u16(rangeOffsets + i * 2)
+                if (offset == 0) return (cp + delta) and 0xFFFF
+                val g = u16(rangeOffsets + i * 2 + offset + (cp - start) * 2)
+                return if (g == 0) 0 else (g + delta) and 0xFFFF
+            }
+        }
+        return 0
+    }
+
+    /** The advance in thousandths of an em, or null when the font has no glyph for [cp]. */
+    fun advance(cp: Int): Int? {
+        val g = glyph(cp)
+        if (g == 0) return null
+        val metric = minOf(g, metricCount - 1)
+        val units = u16(tables.getValue("hmtx") + metric * 4)
+        return Math.round(units * 1000f / unitsPerEm)
+    }
+}
+
 /** Checks the generated width tables against the bundled font files. Skipped where the files can't be found. */
 class FontTablesMatchTheFontsTest {
     private fun fontDir(): File? {
@@ -72,24 +133,36 @@ class FontTablesMatchTheFontsTest {
 
     @Test fun widthsMatchWhatTheFontFilesSay() {
         val dir = fontDir() ?: return
-        System.setProperty("java.awt.headless", "true")
-        val frc = java.awt.font.FontRenderContext(null, true, true)
         val cases = listOf(
-            Triple("carlito_regular", FontTables.CARLITO_REGULAR, WordFace.Carlito),
-            Triple("carlito_bold", FontTables.CARLITO_BOLD, WordFace.Carlito),
-            Triple("caladea_regular", FontTables.CALADEA_REGULAR, WordFace.Caladea),
-            Triple("liberation_sans_regular", FontTables.LIBERATIONSANS_REGULAR, WordFace.LiberationSans),
-            Triple("liberation_serif_italic", FontTables.LIBERATIONSERIF_ITALIC, WordFace.LiberationSerif),
-            Triple("liberation_mono_bold", FontTables.LIBERATIONMONO_BOLD, WordFace.LiberationMono),
+            "carlito_regular" to FontTables.CARLITO_REGULAR,
+            "carlito_bold" to FontTables.CARLITO_BOLD,
+            "carlito_bold_italic" to FontTables.CARLITO_BOLD_ITALIC,
+            "caladea_regular" to FontTables.CALADEA_REGULAR,
+            "caladea_italic" to FontTables.CALADEA_ITALIC,
+            "liberation_sans_regular" to FontTables.LIBERATIONSANS_REGULAR,
+            "liberation_sans_bold" to FontTables.LIBERATIONSANS_BOLD,
+            "liberation_serif_italic" to FontTables.LIBERATIONSERIF_ITALIC,
+            "liberation_serif_bold_italic" to FontTables.LIBERATIONSERIF_BOLD_ITALIC,
+            "liberation_mono_regular" to FontTables.LIBERATIONMONO_REGULAR,
+            "liberation_mono_bold" to FontTables.LIBERATIONMONO_BOLD,
         )
-        for ((file, table, _) in cases) {
-            val font = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, File(dir, "$file.ttf")).deriveFont(1000f)
+        var checked = 0
+        for ((file, table) in cases) {
+            val font = TtfAdvances(File(dir, "$file.ttf").readBytes())
             for ((i, cp) in FontTables.CODEPOINTS.withIndex()) {
-                if (cp == 0xA0 || !font.canDisplay(cp)) continue
-                val advance = font.getStringBounds(String(Character.toChars(cp)), frc).width
-                assertEquals("$file U+${cp.toString(16)}", advance, table[i].toDouble(), 1.5)
+                val advance = font.advance(cp) ?: continue
+                assertEquals("$file U+${cp.toString(16)}", advance.toDouble(), table[i].toDouble(), 1.0)
+                checked++
             }
         }
+        assertTrue("checked only $checked widths", checked > 1500)
+    }
+
+    @Test fun theTableForAKnownLetterIsWhatTheFontSays() {
+        val dir = fontDir() ?: return
+        val font = TtfAdvances(File(dir, "carlito_regular.ttf").readBytes())
+        assertEquals(525, font.advance('n'.code))
+        assertEquals(226, font.advance(' '.code))
     }
 
     @Test fun everyBundledFontFileHasItsLicenceNotice() {
