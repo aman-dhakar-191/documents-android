@@ -42,6 +42,10 @@ object DocxParser {
     private const val AUTO_SPACING_PT = 14f
     private const val MAX_GRID = 64
     private const val MAX_HEADER_BLOCKS = 200
+    private const val MAX_BOX_DEPTH = 3
+    private const val EMU_PER_PT = 12700f
+    private const val WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    private const val MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
     private const val DEFAULT_CELL_MARGIN_PT = 5.4f
 
 
@@ -627,7 +631,12 @@ object DocxParser {
             if (runs.isEmpty() && images.isNotEmpty() && list == null) {
                 // A paragraph that only holds picture(s): the pictures are the content. An empty paragraph in front of
                 // them would take up room and could push a page-sized picture onto the next page.
-                images.forEachIndexed { i, image -> out += if (i == 0 && breakBefore) DocxImage(image.name, image.bytes, pageBreakBefore = true) else image }
+                images.forEachIndexed { i, image ->
+                    // The paragraph's alignment (a centred picture) belongs to the picture.
+                    val placed = if (image.align == DocxAlign.Start && align != DocxAlign.Start) image.with(align = align) else image
+                    out += if (i == 0 && breakBefore) placed.with(pageBreakBefore = true) else placed
+                }
+                out += flags.extra
                 if (flags.pageBreak) out += DocxParagraph(emptyList(), pageBreakAfter = true)
             } else {
                 out += DocxParagraph(
@@ -636,6 +645,7 @@ object DocxParser {
                     layout = styles.layout(styleId, Styles.readProps(pPr, null), tableBase),
                 )
                 out += images
+                out += flags.extra
             }
         }
 
@@ -647,6 +657,8 @@ object DocxParser {
             var instr = StringBuilder()
             var skipResult = false
             var pendingField: PageField? = null
+            /** Floating pictures and text boxes found in the paragraph: they go after it in the flow. */
+            val extra = ArrayList<DocxBlock>()
         }
 
         /** PAGE and NUMPAGES fields are the ones the page fills in; others show their stored result. */
@@ -692,6 +704,13 @@ object DocxParser {
             val underline = rPr?.child("u")?.let { it.wAttr("val") != "none" } ?: false
             val text = StringBuilder()
             for (c in r.childElements()) {
+                if (c.namespaceURI == MC && c.localName == "AlternateContent") {
+                    // Word writes a modern drawing and an older copy of it: only the first is read, or text boxes appear twice.
+                    val choice = c.childElements().firstOrNull { it.namespaceURI == MC && it.localName == "Choice" }
+                        ?: c.childElements().firstOrNull { it.namespaceURI == MC && it.localName == "Fallback" }
+                    for (inner in choice?.childElements().orEmpty()) if (inner.namespaceURI == W) readObject(inner, images, flags)
+                    continue
+                }
                 if (c.namespaceURI != W) continue
                 when (c.localName) {
                     "t" -> if (!flags.skipResult) text.append(c.textContent)
@@ -715,7 +734,7 @@ object DocxParser {
                         else -> text.append('\n')
                     }
                     "noBreakHyphen" -> text.append('-')
-                    "drawing", "pict" -> findImage(c)?.let { images += it }
+                    "drawing", "pict" -> readObject(c, images, flags)
                 }
             }
             val pending = flags.pendingField
@@ -740,6 +759,65 @@ object DocxParser {
                 )
             }
         }
+
+        private var boxDepth = 0
+
+        /** A `drawing` or `pict` element: a picture (in the flow, or floating), or a text box. Things we can't show are skipped. */
+        private fun readObject(node: Element, images: MutableList<DocxImage>, flags: RunFlags) {
+            val container = node.childElements().firstOrNull { it.namespaceURI == WP && (it.localName == "inline" || it.localName == "anchor") }
+            val extent = container?.childElements()?.firstOrNull { it.namespaceURI == WP && it.localName == "extent" }
+            fun emu(name: String) = extent?.getAttribute(name)?.toLongOrNull()?.takeIf { it in 1..2_000_000_000L }?.let { it / EMU_PER_PT }
+            val widthPt = emu("cx")?.coerceAtMost(5000f)
+            val heightPt = emu("cy")?.coerceAtMost(5000f)
+            // A text box: its paragraphs, read like the body (a limit on nesting stops a box inside a box inside ...).
+            val content = descendant(node, W, "txbxContent")
+            if (content != null) {
+                if (boxDepth < MAX_BOX_DEPTH) {
+                    boxDepth++
+                    try {
+                        val inner = ArrayList<DocxBlock>()
+                        readInto(content, inner)
+                        val line = descendant(node, DML, "ln")
+                        val lineColor = line?.let { descendant(it, DML, "srgbClr")?.getAttribute("val") }?.takeIf { Regex("^[0-9A-Fa-f]{6}$").matches(it) }?.uppercase()
+                        val lineWidth = if (line != null && descendant(line, DML, "noFill") == null) (line.getAttribute("w").toLongOrNull() ?: 9525L).coerceIn(0L, 190500L) / EMU_PER_PT else 0f
+                        val shapeProps = descendant(node, "http://schemas.microsoft.com/office/word/2010/wordprocessingShape", "spPr")
+                        val fill = shapeProps?.childElements()?.firstOrNull { it.namespaceURI == DML && it.localName == "solidFill" }
+                            ?.let { descendant(it, DML, "srgbClr")?.getAttribute("val") }?.takeIf { Regex("^[0-9A-Fa-f]{6}$").matches(it) }?.uppercase()
+                        if (inner.isNotEmpty()) flags.extra += DocxTextBox(inner, widthPt, lineWidth, lineColor, fill)
+                    } finally {
+                        boxDepth--
+                    }
+                }
+                return
+            }
+            val image = findImage(node)?.let { DocxImage(it.name, it.bytes, widthPt = widthPt, heightPt = heightPt) } ?: return
+            if (container?.localName != "anchor") {
+                images += image
+                return
+            }
+            fun pos(axis: String): Triple<FloatFrom, Float, String?> {
+                val p = container.childElements().firstOrNull { it.namespaceURI == WP && it.localName == axis }
+                val from = if (p?.getAttribute("relativeFrom") == "page") FloatFrom.Page else FloatFrom.Margin
+                val offset = p?.let { descendant(it, WP, "posOffset") }?.textContent?.trim()?.toLongOrNull()?.coerceIn(-20_000_000L, 20_000_000L)?.let { it / EMU_PER_PT } ?: 0f
+                val align = p?.let { descendant(it, WP, "align") }?.textContent?.trim()
+                return Triple(from, offset, align)
+            }
+            val (xFrom, x, ax) = pos("positionH")
+            val (yFrom, y, ay) = pos("positionV")
+            val behind = container.getAttribute("behindDoc") == "1"
+            val noWrap = container.childElements().any { it.namespaceURI == WP && it.localName == "wrapNone" }
+            val alignH = when (ax) { "center" -> DocxAlign.Center; "right" -> DocxAlign.End; "left" -> DocxAlign.Start; else -> null }
+            if (behind || noWrap) {
+                val alignV = when (ay) { "center" -> CellAlign.Center; "bottom" -> CellAlign.Bottom; "top" -> CellAlign.Top; else -> null }
+                flags.extra += DocxFloat(image, x, y, xFrom, yFrom, behind, alignH, alignV)
+            } else {
+                // Text wrapping around a picture isn't done: it sits in the flow, where its alignment puts it.
+                images += if (alignH != null) image.with(align = alignH) else image
+            }
+        }
+
+        /** The first element named [local] in [ns] anywhere under [root], or null. */
+        private fun descendant(root: Element, ns: String, local: String): Element? = root.getElementsByTagNameNS(ns, local).item(0) as? Element
 
         /** The picture inside a drawing, found through its relationship id. Pictures we can't show are skipped. */
         private fun findImage(node: Element): DocxImage? {

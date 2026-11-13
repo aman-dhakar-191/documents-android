@@ -5,6 +5,7 @@ import io.github.amandhakar.documents.word.DocxDocument
 import io.github.amandhakar.documents.word.DocxParagraph
 import io.github.amandhakar.documents.word.DocxRun
 import io.github.amandhakar.documents.word.DocxTable
+import io.github.amandhakar.documents.word.DocxTextBox
 
 /** One change to a Word document. Paragraphs are named by [DocxParagraph.id]; new ones get a made-up id from [DocxEdits.TEMP_BASE] up. */
 sealed interface DocxEdit
@@ -101,6 +102,7 @@ object DocxEditModel {
                     if (b.id !in r.deleted) out += if (b.id in r.replaced) withText(b, r.replaced.getValue(b.id)) else b
                     out += chain(b.id, b, r)
                 }
+                b is DocxTextBox -> out += DocxTextBox(mapBlocks(b.blocks, r), b.widthPt, b.lineWidthPt, b.lineHex, b.fillHex)
                 b is DocxTable -> out += b.copy(rows = b.rows.map { row -> row.map { cell -> mapBlocks(cell, r) } })
                 else -> out += b
             }

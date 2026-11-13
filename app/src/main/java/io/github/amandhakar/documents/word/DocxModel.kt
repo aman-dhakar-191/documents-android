@@ -128,7 +128,49 @@ data class TableLayout(
 )
 
 /** A picture. [bytes] is the original png / jpeg / gif / bmp / webp file. [pageBreakBefore] starts it on a new page. */
-class DocxImage(val name: String, val bytes: ByteArray, val pageBreakBefore: Boolean = false) : DocxBlock
+class DocxImage(
+    val name: String,
+    val bytes: ByteArray,
+    val pageBreakBefore: Boolean = false,
+    /** The size the file draws the picture at, in points, when it says (else its pixels at 96 per inch are used). */
+    val widthPt: Float? = null,
+    val heightPt: Float? = null,
+    val align: DocxAlign = DocxAlign.Start,
+) : DocxBlock {
+    fun with(pageBreakBefore: Boolean = this.pageBreakBefore, align: DocxAlign = this.align) =
+        DocxImage(name, bytes, pageBreakBefore, widthPt, heightPt, align)
+}
+
+/** What a floating object's position is measured from. */
+enum class FloatFrom { Page, Margin }
+
+/**
+ * A picture placed at a spot on the page, behind or in front of the text, taking no room in the text (a watermark, a
+ * logo, a background). [xPt] and [yPt] are offsets from [xFrom] / [yFrom] unless [alignH] / [alignV] say left / centre /
+ * right or top / centre / bottom of that area. It is drawn on the page of the paragraph it is anchored in.
+ */
+class DocxFloat(
+    val image: DocxImage,
+    val xPt: Float,
+    val yPt: Float,
+    val xFrom: FloatFrom = FloatFrom.Margin,
+    val yFrom: FloatFrom = FloatFrom.Margin,
+    val behind: Boolean = false,
+    val alignH: DocxAlign? = null,
+    val alignV: CellAlign? = null,
+) : DocxBlock
+
+/**
+ * A text box, shown in the flow of the text where it is anchored (not placed beside the text as in Word): its
+ * paragraphs in a box [widthPt] wide (the text width when null), with a line [lineWidthPt] thick in [lineHex] and a fill.
+ */
+class DocxTextBox(
+    val blocks: List<DocxBlock>,
+    val widthPt: Float? = null,
+    val lineWidthPt: Float = 0f,
+    val lineHex: String? = null,
+    val fillHex: String? = null,
+) : DocxBlock
 
 /** The paper: size and margins in points (72 to the inch). Defaults to A4 with 2.54 cm (1 inch) margins. */
 data class PageSetup(
@@ -195,13 +237,15 @@ class DocxDocument(
     val headerFooter: HeaderFooter = HeaderFooter(),
 ) {
     /** All the text, one paragraph per line (tables: cells separated by tabs). */
-    fun plainText(): String = blocks.filter { it !is DocxColumns }.joinToString("\n") { plain(it) }
+    fun plainText(): String = blocks.filter { it !is DocxColumns && it !is DocxFloat }.joinToString("\n") { plain(it) }
 
     private fun plain(block: DocxBlock): String = when (block) {
         is DocxParagraph -> block.text
         is DocxTable -> block.rows.joinToString("\n") { row -> row.joinToString("\t") { cell -> cell.joinToString(" ") { plain(it) } } }
         is DocxImage -> ""
         is DocxColumns -> ""
+        is DocxFloat -> ""
+        is DocxTextBox -> block.blocks.joinToString("\n") { plain(it) }
     }
 }
 
