@@ -105,6 +105,7 @@ private fun ParagraphView(p: DocxParagraph) {
             fontSize = size.sp,
             lineHeight = (size * 1.4f).sp,
             fontWeight = if (p.headingLevel > 0) FontWeight.Bold else null,
+            fontFamily = WordFontFamilies.of(PageLayout.faceOf(p)),
             textAlign = align,
             modifier = Modifier.fillMaxWidth().editable(p, onEdit).padding(top = top, bottom = 2.dp),
         )
@@ -118,7 +119,7 @@ private fun ParagraphView(p: DocxParagraph) {
         content()
     } else {
         Row(Modifier.padding(start = (list.level * 22).dp)) {
-            Text(list.label, color = PageInk, fontSize = WordStyle.BODY_SP.sp, modifier = Modifier.width(28.dp).padding(top = 2.dp))
+            Text(list.label, color = PageInk, fontSize = WordStyle.BODY_SP.sp, fontFamily = WordFontFamilies.of(PageLayout.faceOf(p)), modifier = Modifier.width(28.dp).padding(top = 2.dp))
             Box(Modifier.weight(1f)) { content() }
         }
     }
@@ -139,6 +140,7 @@ private fun styled(p: DocxParagraph): AnnotatedString = buildAnnotatedString {
                 // A heading's size comes from its level; other runs may carry their own size.
                 fontSize = if (p.headingLevel == 0 && run.sizeHalfPoints != null) WordStyle.runSizeSp(run.sizeHalfPoints).sp else androidx.compose.ui.unit.TextUnit.Unspecified,
                 color = color,
+                fontFamily = WordFontFamilies.forName(run.fontName ?: p.layout?.fontName),
             ),
         ) { append(run.text) }
     }
