@@ -112,7 +112,7 @@ object DocxEditModel {
     private fun chain(id: Int, template: DocxParagraph, r: ResolvedDocxEdits): List<DocxBlock> {
         val out = ArrayList<DocxBlock>()
         for (ins in r.insertsAfter(id)) {
-            val p = withText(template.copy(id = ins.id, pageBreakBefore = false, pageBreakAfter = false, editable = true), ins.text)
+            val p = withText(template.copy(id = ins.id, pageBreakBefore = false, pageBreakAfter = false, columnBreakAfter = false, editable = true), ins.text)
             out += p
             out += chain(ins.id, p, r)
         }

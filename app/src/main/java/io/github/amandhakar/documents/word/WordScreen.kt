@@ -78,6 +78,7 @@ private fun BlockView(block: DocxBlock) {
         is DocxParagraph -> ParagraphView(block)
         is DocxTable -> TableView(block)
         is DocxImage -> ImageView(block)
+        is DocxColumns -> Unit // the reading view is one column
     }
 }
 

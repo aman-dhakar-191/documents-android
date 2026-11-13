@@ -19,6 +19,7 @@ import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import io.github.amandhakar.documents.word.DocxAlign
 import io.github.amandhakar.documents.word.DocxBlock
+import io.github.amandhakar.documents.word.DocxColumns
 import io.github.amandhakar.documents.word.DocxDocument
 import io.github.amandhakar.documents.word.DocxImage
 import io.github.amandhakar.documents.word.DocxImages
@@ -105,6 +106,7 @@ private class PageWriter(val pdf: PdfDocument, val setup: PageSetup) {
             is DocxParagraph -> paragraph(block)
             is DocxTable -> table(block)
             is DocxImage -> image(block)
+            is DocxColumns -> Unit // columns aren't laid out in the PDF: the text runs as one column
         }
     }
 
