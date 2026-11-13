@@ -35,7 +35,7 @@ object TextFiles {
     fun decode(bytes: ByteArray): String {
         if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) return String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
         if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) return String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
-        val text = String(bytes, Charsets.UTF_8).removePrefix("﻿")
+        val text = String(bytes, Charsets.UTF_8).removePrefix("\uFEFF")
         return text.trimEnd('�').let { if (text.endsWith('�') && bytes.size == MAX_BYTES) it else text }
     }
 }

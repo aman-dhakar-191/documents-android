@@ -127,7 +127,7 @@ class MarkdownBlockTest {
     }
 
     @Test fun windowsLineEndingsAndABomAreHandled() {
-        assertEquals(listOf("A", "b"), paras("﻿# A\r\n\r\nb\r\n").map { it.text })
+        assertEquals(listOf("A", "b"), paras("\uFEFF# A\r\n\r\nb\r\n").map { it.text })
     }
 
     @Test fun tabsInIndentationCountAsCodeIndent() {

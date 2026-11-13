@@ -38,7 +38,7 @@ object MarkdownParser {
     val PAGE = PageSetup(PageSetup.A4_WIDTH_PT, PageSetup.A4_HEIGHT_PT, 54f, 54f, 54f, 54f)
 
     fun parse(source: String): DocxDocument {
-        val text = source.removePrefix("﻿").replace("\r\n", "\n").replace('\r', '\n')
+        val text = source.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
         val lines = text.split('\n').let { if (it.size > MAX_LINES) it.take(MAX_LINES) else it }.map { expandTabs(it) }
         val body = ArrayList<DocxBlock>()
         var start = 0
