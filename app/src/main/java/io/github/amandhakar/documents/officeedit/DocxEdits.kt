@@ -90,7 +90,7 @@ object DocxEditModel {
     fun apply(doc: DocxDocument, edits: DocxEdits): DocxDocument {
         if (edits.isEmpty) return doc
         val r = edits.resolved()
-        return DocxDocument(mapBlocks(doc.blocks, r), doc.truncated, doc.page)
+        return DocxDocument(mapBlocks(doc.blocks, r), doc.truncated, doc.page, doc.headerFooter)
     }
 
     private fun mapBlocks(blocks: List<DocxBlock>, r: ResolvedDocxEdits): List<DocxBlock> {

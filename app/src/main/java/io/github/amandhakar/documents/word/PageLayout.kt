@@ -263,11 +263,31 @@ object PageLayout {
             p.copy(runs = rest, list = p.list?.copy(label = ""), pageBreakBefore = false)
     }
 
+    private fun blocksHeight(blocks: List<DocxBlock>, page: PageSetup): Float = blocks.sumOf { heightOf(it, page).toDouble() }.toFloat()
+
+    /** Where the text of page [pageIndex] (from 0) starts, measured from the top of the page: below the top margin, or below the header if that is taller. */
+    fun bodyTopPt(doc: DocxDocument, pageIndex: Int): Float {
+        val header = doc.headerFooter.headerFor(pageIndex)
+        if (header.isEmpty()) return doc.page.marginTopPt
+        return maxOf(doc.page.marginTopPt, doc.headerFooter.headerDistancePt + blocksHeight(header, doc.page)).coerceAtMost(doc.page.heightPt / 2)
+    }
+
+    /** How far above the bottom of page [pageIndex] the text must stop: the bottom margin, or the footer if that is taller. */
+    fun bodyBottomPt(doc: DocxDocument, pageIndex: Int): Float {
+        val footer = doc.headerFooter.footerFor(pageIndex)
+        if (footer.isEmpty()) return doc.page.marginBottomPt
+        return maxOf(doc.page.marginBottomPt, doc.headerFooter.footerDistancePt + blocksHeight(footer, doc.page)).coerceAtMost(doc.page.heightPt / 2)
+    }
+
+    /** The room for text on page [pageIndex]: the page's height less where the header and footer take. */
+    fun contentLimit(doc: DocxDocument, pageIndex: Int): Float =
+        maxOf(36f, doc.page.heightPt - bodyTopPt(doc, pageIndex) - bodyBottomPt(doc, pageIndex))
+
     /** The pages: each is the list of blocks on it (always at least one page). A tall table or picture that can't fit even alone is placed anyway. */
     fun paginate(doc: DocxDocument): List<List<DocxBlock>> {
         val page = doc.page
         val width = page.contentWidthPt
-        val limit = page.contentHeightPt
+        var limit = contentLimit(doc, 0)
         val pages = ArrayList<MutableList<DocxBlock>>()
         var current = ArrayList<DocxBlock>()
         var used = 0f
@@ -275,6 +295,7 @@ object PageLayout {
             pages += current
             current = ArrayList()
             used = 0f
+            limit = contentLimit(doc, pages.size)
         }
         for (original in doc.blocks) {
             var block: DocxBlock? = original
@@ -358,10 +379,10 @@ object PageLayout {
     fun paginateColumns(doc: DocxDocument): List<ColumnPage> {
         val real = doc.blocks.filter { it !is DocxColumns }
         if (doc.blocks.none { it is DocxColumns && it.count > 1 } && real.none { it is DocxParagraph && it.columnBreakAfter }) {
-            return paginate(DocxDocument(real, doc.truncated, doc.page)).map { ColumnPage(listOf(ColumnBand(listOf(it), 0f))) }
+            return paginate(DocxDocument(real, doc.truncated, doc.page, doc.headerFooter)).map { ColumnPage(listOf(ColumnBand(listOf(it), 0f))) }
         }
         val page = doc.page
-        val pageLimit = page.contentHeightPt
+        var pageLimit = contentLimit(doc, 0)
         val pages = ArrayList<ColumnPage>()
         var bands = ArrayList<ColumnBand>()
         var n = 1
@@ -392,6 +413,7 @@ object PageLayout {
             pages += ColumnPage(bands)
             bands = ArrayList()
             bandTop = 0f
+            pageLimit = contentLimit(doc, pages.size)
             freshBand()
         }
 

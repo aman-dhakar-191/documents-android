@@ -41,6 +41,7 @@ object DocxParser {
     private const val DEFAULT_GAP_TWIPS = 720
     private const val AUTO_SPACING_PT = 14f
     private const val MAX_GRID = 64
+    private const val MAX_HEADER_BLOCKS = 200
     private const val DEFAULT_CELL_MARGIN_PT = 5.4f
 
 
@@ -60,7 +61,35 @@ object DocxParser {
         val reader = BodyReader(styles, numbering, rels, parts.media, limits, ids)
         reader.readBlocks(body)
         reader.addColumns(body.child("sectPr"))
-        return DocxDocument(reader.blocks, reader.truncated, readPage(body.child("sectPr")))
+        val headerFooter = readHeaderFooter(body.child("sectPr"), parts, rels, styles, numbering, limits)
+        return DocxDocument(reader.blocks, reader.truncated, readPage(body.child("sectPr")), headerFooter)
+    }
+
+    /** The headers and footers of the last (or only) section: the default ones and, when the section asks for it, the first page's own. */
+    private fun readHeaderFooter(sect: Element?, parts: Parts, rels: Map<String, String>, styles: Styles, numbering: Numbering, limits: DocxLimits): HeaderFooter {
+        if (sect == null) return HeaderFooter()
+        fun load(kind: String, type: String): List<DocxBlock> {
+            val ref = sect.children(kind).firstOrNull { (it.wAttr("type") ?: "default") == type } ?: return emptyList()
+            val path = ref.rAttr("id")?.let { rels[it] } ?: return emptyList()
+            val xml = parts.xml[path] ?: return emptyList()
+            return try {
+                val relsPath = path.substringBeforeLast('/') + "/_rels/" + path.substringAfterLast('/') + ".rels"
+                val partRels = parts.xml[relsPath]?.let { parseRels(it) } ?: emptyMap()
+                val reader = BodyReader(styles, numbering, partRels, parts.media, limits, java.util.IdentityHashMap())
+                reader.readBlocks(dom(xml).documentElement)
+                reader.blocks.take(MAX_HEADER_BLOCKS)
+            } catch (e: Exception) {
+                emptyList() // a damaged header is left out; the document still opens
+            }
+        }
+        val mar = sect.child("pgMar")
+        fun distance(name: String) = mar?.wAttr(name)?.toIntOrNull()?.takeIf { it in 0..4320 }?.let { it / 20f } ?: 36f
+        return HeaderFooter(
+            header = load("headerReference", "default"), footer = load("footerReference", "default"),
+            firstHeader = load("headerReference", "first"), firstFooter = load("footerReference", "first"),
+            differentFirstPage = sect.child("titlePg")?.let { it.isOn() } ?: false,
+            headerDistancePt = distance("header"), footerDistancePt = distance("footer"),
+        )
     }
 
     /** The page of the document's last (or only) section. No section properties means A4. */
@@ -81,6 +110,7 @@ object DocxParser {
 
     private fun readParts(input: InputStream, limits: DocxLimits): Parts {
         val wanted = setOf(DOCUMENT, STYLES, NUMBERING, RELS, THEME)
+        val headerOrFooter = Regex("^word/(_rels/)?(header|footer)\\d*\\.xml(\\.rels)?$")
         try {
             val parts = OoxmlZip.read(
                 input,
@@ -91,7 +121,7 @@ object DocxParser {
                     maxEntries = limits.maxEntries,
                     maxInflatedBytes = limits.maxInflatedBytes,
                 ),
-                wantXml = { it in wanted },
+                wantXml = { it in wanted || headerOrFooter.matches(it) },
                 wantMedia = { it.startsWith("word/media/") },
             )
             return Parts(parts.xml, parts.media)
@@ -613,6 +643,20 @@ object DocxParser {
         private class RunFlags {
             var pageBreak = false
             var columnBreak = false
+            /** Inside a complex field: its instruction so far, whether its result is a page number we draw ourselves, and the field to emit. */
+            var instr = StringBuilder()
+            var skipResult = false
+            var pendingField: PageField? = null
+        }
+
+        /** PAGE and NUMPAGES fields are the ones the page fills in; others show their stored result. */
+        private fun pageFieldOf(instr: String): PageField? {
+            val word = instr.trim().substringBefore(' ').uppercase()
+            return when (word) {
+                "PAGE" -> PageField.Page
+                "NUMPAGES" -> PageField.Pages
+                else -> null
+            }
         }
 
         /** True when the paragraph holds a field: editing its text could break the field. */
@@ -626,7 +670,17 @@ object DocxParser {
                 when (e.localName) {
                     "r" -> readRun(e, runs, images, flags)
                     // links, tracked insertions, smart tags and simple fields wrap more runs
-                    "hyperlink", "ins", "smartTag", "fldSimple" -> collectRuns(e, runs, images, flags)
+                    "hyperlink", "ins", "smartTag" -> collectRuns(e, runs, images, flags)
+                    "fldSimple" -> {
+                        val before = runs.size
+                        collectRuns(e, runs, images, flags)
+                        val kind = pageFieldOf(e.wAttr("instr").orEmpty())
+                        if (kind != null && runs.size > before) {
+                            val look = runs[before]
+                            while (runs.size > before) runs.removeAt(runs.size - 1)
+                            runs += look.copy(text = "1", field = kind)
+                        }
+                    }
                 }
             }
         }
@@ -640,7 +694,20 @@ object DocxParser {
             for (c in r.childElements()) {
                 if (c.namespaceURI != W) continue
                 when (c.localName) {
-                    "t" -> text.append(c.textContent)
+                    "t" -> if (!flags.skipResult) text.append(c.textContent)
+                    "instrText" -> flags.instr.append(c.textContent)
+                    "fldChar" -> when (c.wAttr("fldCharType")) {
+                        "begin" -> {
+                            flags.instr = StringBuilder()
+                            flags.skipResult = false
+                            flags.pendingField = null
+                        }
+                        "separate" -> pageFieldOf(flags.instr.toString())?.let {
+                            flags.skipResult = true
+                            flags.pendingField = it
+                        }
+                        "end" -> flags.skipResult = false
+                    }
                     "tab" -> text.append('\t')
                     "br", "cr" -> when (c.wAttr("type")) {
                         "page" -> flags.pageBreak = true
@@ -651,7 +718,16 @@ object DocxParser {
                     "drawing", "pict" -> findImage(c)?.let { images += it }
                 }
             }
-            if (text.isNotEmpty()) {
+            val pending = flags.pendingField
+            if (pending != null && (flags.skipResult || text.isNotEmpty())) {
+                // The result of a page number field: a stand-in the page replaces with the real number.
+                runs += DocxRun(
+                    text = "1", bold = rPr?.child("b").isOn(), italic = rPr?.child("i").isOn(), underline = underline,
+                    sizeHalfPoints = size?.takeIf { it in 2..400 }, colorHex = color?.takeIf { it != "AUTO" },
+                    fontName = styles.fontOf(rPr?.child("rFonts")), field = pending,
+                )
+                flags.pendingField = null
+            } else if (text.isNotEmpty()) {
                 runs += DocxRun(
                     text = text.toString(),
                     bold = rPr?.child("b").isOn(),

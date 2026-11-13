@@ -28,6 +28,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -62,6 +64,9 @@ import kotlinx.coroutines.withContext
 private val PageInk = Color(0xFF1B1D22)
 private val PageLine = Color(0xFFBFC3CA)
 
+/** The number of the page being drawn and of all pages, which page number fields in the header, footer and text show. */
+private val LocalPageInfo = staticCompositionLocalOf { 1 to 1 }
+
 /** Points to screen units for one zoom level: [dpPerPt] dp per point of paper, and the user's font setting to undo (the page is drawn to scale). */
 private class PageScale(val dpPerPt: Float, val fontScale: Float) {
     fun dp(pt: Float): Dp = Dp(pt * dpPerPt)
@@ -93,12 +98,10 @@ fun WordPagesScreen(document: DocxDocument, zoom: Float, modifier: Modifier = Mo
                             .clip(RectangleShape)
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
                             .background(Color.White)
-                            .padding(
-                                start = scale.dp(setup.marginLeftPt), end = scale.dp(setup.marginRightPt),
-                                top = scale.dp(setup.marginTopPt), bottom = scale.dp(setup.marginBottomPt),
-                            ),
+                            .padding(start = scale.dp(setup.marginLeftPt), end = scale.dp(setup.marginRightPt)),
                     ) {
-                        Column(Modifier.fillMaxWidth()) {
+                      CompositionLocalProvider(LocalPageInfo provides (index + 1 to pages.size)) {
+                        Column(Modifier.fillMaxWidth().padding(top = scale.dp(PageLayout.bodyTopPt(document, index)), bottom = scale.dp(PageLayout.bodyBottomPt(document, index)))) {
                             for (band in blocks.bands) {
                                 val count = band.columns.size
                                 val columnWidth = PageLayout.columnWidthPt(count, band.gapPt, setup)
@@ -111,6 +114,19 @@ fun WordPagesScreen(document: DocxDocument, zoom: Float, modifier: Modifier = Mo
                                 }
                             }
                         }
+                        val header = document.headerFooter.headerFor(index)
+                        if (header.isNotEmpty()) {
+                            Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(top = scale.dp(document.headerFooter.headerDistancePt))) {
+                                for (block in header) PageBlock(block, setup, scale)
+                            }
+                        }
+                        val footer = document.headerFooter.footerFor(index)
+                        if (footer.isNotEmpty()) {
+                            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = scale.dp(document.headerFooter.footerDistancePt))) {
+                                for (block in footer) PageBlock(block, setup, scale)
+                            }
+                        }
+                      }
                     }
                     Text(
                         "Page ${index + 1} of ${pages.size}",
@@ -157,7 +173,8 @@ private fun PageBlock(block: DocxBlock, setup: PageSetup, scale: PageScale, widt
 private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
     val onEdit = LocalWordEdit.current
     val font = PageLayout.fontPt(p)
-    val text = remember(p, scale.dpPerPt) { styled(p, scale) }
+    val pageInfo = LocalPageInfo.current
+    val text = remember(p, scale.dpPerPt, pageInfo) { styled(p, scale, pageInfo) }
     val align = when (p.align) {
         DocxAlign.Center -> TextAlign.Center
         DocxAlign.End -> TextAlign.End
@@ -195,7 +212,7 @@ private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
     }
 }
 
-private fun styled(p: DocxParagraph, scale: PageScale): AnnotatedString = buildAnnotatedString {
+private fun styled(p: DocxParagraph, scale: PageScale, pageInfo: Pair<Int, Int>): AnnotatedString = buildAnnotatedString {
     for (run in p.runs) {
         val decorations = buildList {
             if (run.underline) add(TextDecoration.Underline)
@@ -212,7 +229,15 @@ private fun styled(p: DocxParagraph, scale: PageScale): AnnotatedString = buildA
                 color = color,
                 fontFamily = WordFontFamilies.forName(run.fontName ?: p.layout?.fontName),
             ),
-        ) { append(run.text) }
+        ) {
+            append(
+                when (run.field) {
+                    PageField.Page -> pageInfo.first.toString()
+                    PageField.Pages -> pageInfo.second.toString()
+                    null -> run.text
+                },
+            )
+        }
     }
 }
 

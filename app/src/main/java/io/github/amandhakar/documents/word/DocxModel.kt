@@ -12,6 +12,8 @@ data class DocxRun(
     val colorHex: String? = null,
     /** The font this run names for itself (a theme font already resolved to its name), or null to use the paragraph's. */
     val fontName: String? = null,
+    /** Set for a page number field: the run's text is only a stand-in, the page shows the real number. */
+    val field: PageField? = null,
 )
 
 /** How tall a line is: a multiple of the text's natural height (1 = single), at least so many points, or exactly so many. */
@@ -39,6 +41,9 @@ data class ParagraphLayout(
     /** The font the style or the document defaults give the text (a theme font resolved to its name), or null. */
     val fontName: String? = null,
 )
+
+/** A field the page fills in: the number of this page, or the number of pages. */
+enum class PageField { Page, Pages }
 
 enum class DocxAlign { Start, Center, End, Justify }
 
@@ -166,7 +171,29 @@ data class PageSetup(
 }
 
 /** What was read from a .docx. [truncated] is true when the file was bigger than the app shows. */
-class DocxDocument(val blocks: List<DocxBlock>, val truncated: Boolean = false, val page: PageSetup = PageSetup()) {
+/**
+ * What goes in the top and bottom margins of every page. [firstHeader] and [firstFooter] replace them on the first page
+ * when [differentFirstPage] is set. The distances are from the page edge to the header's top and the footer's bottom.
+ */
+data class HeaderFooter(
+    val header: List<DocxBlock> = emptyList(),
+    val footer: List<DocxBlock> = emptyList(),
+    val firstHeader: List<DocxBlock> = emptyList(),
+    val firstFooter: List<DocxBlock> = emptyList(),
+    val differentFirstPage: Boolean = false,
+    val headerDistancePt: Float = 36f,
+    val footerDistancePt: Float = 36f,
+) {
+    fun headerFor(pageIndex: Int) = if (differentFirstPage && pageIndex == 0) firstHeader else header
+    fun footerFor(pageIndex: Int) = if (differentFirstPage && pageIndex == 0) firstFooter else footer
+}
+
+class DocxDocument(
+    val blocks: List<DocxBlock>,
+    val truncated: Boolean = false,
+    val page: PageSetup = PageSetup(),
+    val headerFooter: HeaderFooter = HeaderFooter(),
+) {
     /** All the text, one paragraph per line (tables: cells separated by tabs). */
     fun plainText(): String = blocks.filter { it !is DocxColumns }.joinToString("\n") { plain(it) }
 
