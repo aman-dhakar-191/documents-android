@@ -12,6 +12,30 @@ data class DocxRun(
     val colorHex: String? = null,
 )
 
+/** How tall a line is: a multiple of the text's natural height (1 = single), at least so many points, or exactly so many. */
+sealed interface LineSpacing {
+    data class Multiple(val factor: Float) : LineSpacing
+    data class AtLeast(val pt: Float) : LineSpacing
+    data class Exactly(val pt: Float) : LineSpacing
+}
+
+/**
+ * What a paragraph's style and its own settings say about its shape, all in points. [firstLinePt] is how far the first
+ * line is indented from [leftPt] (negative for a hanging indent). [sizeHalfPoints] is the text size when a run doesn't
+ * give its own. [contextual] means no space between paragraphs of the same style ("don't add space between...").
+ */
+data class ParagraphLayout(
+    val spaceBeforePt: Float = 0f,
+    val spaceAfterPt: Float = 0f,
+    val line: LineSpacing = LineSpacing.Multiple(1f),
+    val leftPt: Float = 0f,
+    val rightPt: Float = 0f,
+    val firstLinePt: Float = 0f,
+    val sizeHalfPoints: Int? = null,
+    val styleId: String? = null,
+    val contextual: Boolean = false,
+)
+
 enum class DocxAlign { Start, Center, End, Justify }
 
 /** The bullet or number in front of a list item, and how far it is indented (0 = outermost). */
@@ -35,6 +59,8 @@ data class DocxParagraph(
     val editable: Boolean = true,
     /** A column break comes after this paragraph's text: what follows starts the next column (or page, from the last column). */
     val columnBreakAfter: Boolean = false,
+    /** The spacing, line spacing, indents and text size the file gives this paragraph; null when it says nothing (made up, or no styles). */
+    val layout: ParagraphLayout? = null,
 ) : DocxBlock {
     val text: String get() = runs.joinToString("") { it.text }
 }

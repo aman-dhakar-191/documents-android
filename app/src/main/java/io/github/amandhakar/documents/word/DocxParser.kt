@@ -37,12 +37,13 @@ object DocxParser {
     private const val RELS = "word/_rels/document.xml.rels"
     private const val MAX_COLUMNS = 4
     private const val DEFAULT_GAP_TWIPS = 720
+    private const val AUTO_SPACING_PT = 14f
 
 
     fun parse(input: InputStream, limits: DocxLimits = DocxLimits()): DocxDocument {
         val parts = readParts(input, limits)
         val documentXml = parts.xml[DOCUMENT] ?: throw DocxException("This isn't a Word document (word/document.xml is missing).")
-        val styles = parts.xml[STYLES]?.let { Styles.parse(it) } ?: Styles(emptyMap())
+        val styles = parts.xml[STYLES]?.let { Styles.parse(it) } ?: Styles(emptyMap(), present = false)
         val numbering = parts.xml[NUMBERING]?.let { Numbering.parse(it) } ?: Numbering(emptyMap(), emptyMap())
         val rels = parts.xml[RELS]?.let { parseRels(it) } ?: emptyMap()
         val doc = dom(documentXml)
@@ -126,9 +127,45 @@ object DocxParser {
 
     // ---- styles and numbering ----
 
-    internal class StyleInfo(val id: String, val name: String, val basedOn: String?, val numId: String?, val ilvl: Int?)
+    internal class StyleInfo(
+        val id: String, val name: String, val basedOn: String?, val numId: String?, val ilvl: Int?,
+        val props: StyleProps = StyleProps(), val isDefaultParagraph: Boolean = false,
+    )
 
-    internal class Styles(private val byId: Map<String, StyleInfo>) {
+    /** The shape settings one place (the defaults, a style, or a paragraph) gives; null means "not said here". */
+    internal data class StyleProps(
+        val before: Float? = null, val after: Float? = null, val line: LineSpacing? = null,
+        val left: Float? = null, val right: Float? = null, val firstLine: Float? = null,
+        val sizeHalfPoints: Int? = null, val contextual: Boolean? = null,
+    ) {
+        /** These settings on top of [base]: what this says wins, the rest comes from [base]. */
+        fun over(base: StyleProps) = StyleProps(
+            before ?: base.before, after ?: base.after, line ?: base.line, left ?: base.left, right ?: base.right,
+            firstLine ?: base.firstLine, sizeHalfPoints ?: base.sizeHalfPoints, contextual ?: base.contextual,
+        )
+    }
+
+    internal class Styles(
+        private val byId: Map<String, StyleInfo>,
+        private val docDefaults: StyleProps = StyleProps(),
+        /** False when the file has no styles part: then no paragraph layout is given (the app's own spacing is used). */
+        val present: Boolean = true,
+    ) {
+        private val defaultParagraphId: String? = byId.values.firstOrNull { it.isDefaultParagraph }?.id
+
+        /** The layout of a paragraph: the defaults, then its style and the styles it is based on, then its own [direct] settings. */
+        fun layout(styleId: String?, direct: StyleProps): ParagraphLayout? {
+            if (!present) return null
+            var p = docDefaults
+            for (s in chain(styleId ?: defaultParagraphId).asReversed()) p = s.props.over(p)
+            p = direct.over(p)
+            return ParagraphLayout(
+                spaceBeforePt = p.before ?: 0f, spaceAfterPt = p.after ?: 0f, line = p.line ?: LineSpacing.Multiple(1f),
+                leftPt = p.left ?: 0f, rightPt = p.right ?: 0f, firstLinePt = p.firstLine ?: 0f,
+                sizeHalfPoints = p.sizeHalfPoints, styleId = styleId ?: defaultParagraphId, contextual = p.contextual ?: false,
+            )
+        }
+
         /** The style and the styles it is based on, nearest first (stops after 10 to survive a loop). */
         private fun chain(styleId: String?): List<StyleInfo> {
             val out = ArrayList<StyleInfo>()
@@ -156,7 +193,8 @@ object DocxParser {
         companion object {
             fun parse(xml: String): Styles {
                 val map = HashMap<String, StyleInfo>()
-                for (style in dom(xml).documentElement.children("style")) {
+                val root = dom(xml).documentElement
+                for (style in root.children("style")) {
                     val id = style.wAttr("styleId") ?: continue
                     val numPr = style.child("pPr")?.child("numPr")
                     map[id] = StyleInfo(
@@ -165,9 +203,42 @@ object DocxParser {
                         basedOn = style.valOf("basedOn"),
                         numId = numPr?.valOf("numId"),
                         ilvl = numPr?.valOf("ilvl")?.toIntOrNull(),
+                        props = readProps(style.child("pPr"), style.child("rPr")),
+                        isDefaultParagraph = style.wAttr("type") == "paragraph" && style.wAttr("default").let { it == "1" || it == "true" },
                     )
                 }
-                return Styles(map)
+                val defaults = root.child("docDefaults")
+                val base = readProps(defaults?.child("pPrDefault")?.child("pPr"), defaults?.child("rPrDefault")?.child("rPr"))
+                return Styles(map, base)
+            }
+
+            private fun twipsToPt(v: String?): Float? = v?.toIntOrNull()?.let { it.coerceIn(-31680, 31680) / 20f }
+
+            /** Spacing, line spacing, indents, text size and "contextual spacing" from a paragraph's (or style's) `pPr` and `rPr`. */
+            fun readProps(pPr: Element?, rPr: Element?): StyleProps {
+                val spacing = pPr?.child("spacing")
+                val ind = pPr?.child("ind")
+                var line: LineSpacing? = null
+                val lineValue = spacing?.wAttr("line")?.toIntOrNull()
+                if (lineValue != null && lineValue > 0) {
+                    line = when (spacing.wAttr("lineRule")) {
+                        "exact" -> LineSpacing.Exactly(lineValue / 20f)
+                        "atLeast" -> LineSpacing.AtLeast(lineValue / 20f)
+                        else -> LineSpacing.Multiple((lineValue / 240f).coerceIn(0.5f, 5f))
+                    }
+                }
+                fun auto(name: String) = spacing?.wAttr(name).let { it == "1" || it == "true" }
+                val hanging = twipsToPt(ind?.wAttr("hanging"))
+                return StyleProps(
+                    before = if (auto("beforeAutospacing")) AUTO_SPACING_PT else twipsToPt(spacing?.wAttr("before"))?.coerceAtLeast(0f),
+                    after = if (auto("afterAutospacing")) AUTO_SPACING_PT else twipsToPt(spacing?.wAttr("after"))?.coerceAtLeast(0f),
+                    line = line,
+                    left = twipsToPt(ind?.wAttr("left") ?: ind?.wAttr("start")),
+                    right = twipsToPt(ind?.wAttr("right") ?: ind?.wAttr("end")),
+                    firstLine = if (hanging != null && hanging > 0f) -hanging else twipsToPt(ind?.wAttr("firstLine")),
+                    sizeHalfPoints = rPr?.valOf("sz")?.toIntOrNull()?.takeIf { it in 2..400 },
+                    contextual = pPr?.child("contextualSpacing")?.let { it.isOn() },
+                )
             }
         }
     }
@@ -229,6 +300,20 @@ object DocxParser {
 
         fun readBlocks(container: Element) {
             readInto(container, blocks)
+            applyContextualSpacing()
+        }
+
+        /** "Don't add space between paragraphs of the same style": the gap between two such neighbours is dropped. */
+        private fun applyContextualSpacing() {
+            for (i in 0 until blocks.size - 1) {
+                val a = blocks[i] as? DocxParagraph ?: continue
+                val b = blocks[i + 1] as? DocxParagraph ?: continue
+                val la = a.layout ?: continue
+                val lb = b.layout ?: continue
+                if (la.styleId == null || la.styleId != lb.styleId) continue
+                if (la.contextual) blocks[i] = a.copy(layout = la.copy(spaceAfterPt = 0f))
+                if (lb.contextual) blocks[i + 1] = b.copy(layout = lb.copy(spaceBeforePt = 0f))
+            }
         }
 
         /** Where each section ended (a block count) and what it said about columns, in order. */
@@ -341,6 +426,7 @@ object DocxParser {
                 out += DocxParagraph(
                     mergeRuns(runs), heading, list, align, pageBreakBefore = breakBefore, pageBreakAfter = flags.pageBreak,
                     id = ids[p] ?: -1, editable = !hasField(p), columnBreakAfter = flags.columnBreak,
+                    layout = styles.layout(styleId, Styles.readProps(pPr, null)),
                 )
                 out += images
             }
