@@ -42,11 +42,13 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -157,7 +159,10 @@ private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
     }
     Row(
         Modifier.fillMaxWidth().padding(top = scale.dp(PageLayout.spaceBefore(p)), bottom = scale.dp(PageLayout.spaceAfter(p)))
-            .padding(start = scale.dp(PageLayout.indent(p) - if (p.list != null) PageLayout.LIST_INDENT else 0f)),
+            .padding(
+                start = scale.dp(PageLayout.indent(p) - if (p.list != null) PageLayout.LIST_INDENT else 0f),
+                end = scale.dp(PageLayout.rightIndent(p)),
+            ),
     ) {
         if (p.list != null) {
             Text(p.list.label, color = PageInk, fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)), modifier = Modifier.width(scale.dp(PageLayout.LIST_INDENT)))
@@ -166,7 +171,10 @@ private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
             Text(
                 text,
                 color = PageInk,
-                style = TextStyle(fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)), textAlign = align),
+                style = TextStyle(
+                    fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)), textAlign = align,
+                    textIndent = PageLayout.firstLineIndent(p).takeIf { it != 0f }?.let { TextIndent(firstLine = scale.sp(it), restLine = 0.sp) },
+                ),
                 modifier = Modifier.fillMaxWidth().editable(p, onEdit),
             )
         }
@@ -183,7 +191,7 @@ private fun styled(p: DocxParagraph, scale: PageScale): AnnotatedString = buildA
             if (run.strike) add(TextDecoration.LineThrough)
         }
         val color = WordStyle.readableColor(run.colorHex)?.let { Color(("FF" + it).toLong(16)) } ?: Color.Unspecified
-        val size = if (p.headingLevel > 0) PageLayout.headingPt(p.headingLevel) else run.sizeHalfPoints?.let { it / 2f } ?: PageLayout.BODY_PT
+        val size = PageLayout.runPt(p, run)
         withStyle(
             SpanStyle(
                 fontWeight = if (run.bold || p.headingLevel > 0) FontWeight.Bold else null,

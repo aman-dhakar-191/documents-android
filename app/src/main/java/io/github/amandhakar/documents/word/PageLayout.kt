@@ -63,7 +63,7 @@ object ImageSize {
 object PageLayout {
     const val BODY_PT = 11f
     private const val LINE_FACTOR = 1.2f
-    private const val CHAR_WIDTH_EM = 0.5f
+    private const val CHAR_WIDTH_EM = 0.43f
     private const val AFTER_PT = 8f
     private const val LIST_AFTER_PT = 3f
     const val LIST_INDENT = 18f
@@ -77,17 +77,37 @@ object PageLayout {
         else -> BODY_PT
     }
 
-    /** The largest size in the paragraph: a heading's, else its biggest run's, else normal text. */
-    fun fontPt(p: DocxParagraph): Float =
-        if (p.headingLevel > 0) headingPt(p.headingLevel) else p.runs.mapNotNull { it.sizeHalfPoints }.maxOrNull()?.let { it / 2f } ?: BODY_PT
+    /**
+     * The largest size in the paragraph. When the file gave the paragraph its layout: its biggest run's size, else the
+     * style's size. Otherwise (a made-up document): a heading's size, else its biggest run's, else normal text.
+     */
+    fun fontPt(p: DocxParagraph): Float {
+        val runSize = p.runs.mapNotNull { it.sizeHalfPoints }.maxOrNull()?.let { it / 2f }
+        val layout = p.layout
+        if (layout != null) return runSize ?: layout.sizeHalfPoints?.let { it / 2f } ?: if (p.headingLevel > 0) headingPt(p.headingLevel) else BODY_PT
+        return if (p.headingLevel > 0) headingPt(p.headingLevel) else runSize ?: BODY_PT
+    }
 
-    internal fun spaceBefore(p: DocxParagraph) = if (p.headingLevel > 0) 10f else 0f
-    internal fun spaceAfter(p: DocxParagraph) = if (p.list != null) LIST_AFTER_PT else if (p.headingLevel > 0) 4f else AFTER_PT
-    internal fun indent(p: DocxParagraph) = if (p.list != null) LIST_INDENT * (p.list.level + 1) else 0f
+    /** The size of one run: its own, else the paragraph's (see [fontPt]). */
+    fun runPt(p: DocxParagraph, run: DocxRun): Float {
+        val layout = p.layout
+        if (layout != null) return run.sizeHalfPoints?.let { it / 2f } ?: layout.sizeHalfPoints?.let { it / 2f } ?: if (p.headingLevel > 0) headingPt(p.headingLevel) else BODY_PT
+        return if (p.headingLevel > 0) headingPt(p.headingLevel) else run.sizeHalfPoints?.let { it / 2f } ?: BODY_PT
+    }
+
+    internal fun spaceBefore(p: DocxParagraph) = p.layout?.spaceBeforePt ?: if (p.headingLevel > 0) 10f else 0f
+    internal fun spaceAfter(p: DocxParagraph) = p.layout?.spaceAfterPt ?: if (p.list != null) LIST_AFTER_PT else if (p.headingLevel > 0) 4f else AFTER_PT
+
+    /** How far in the paragraph's text starts from the left of the text area (a list item's own scheme wins over the file's). */
+    internal fun indent(p: DocxParagraph) = if (p.list != null) LIST_INDENT * (p.list.level + 1) else p.layout?.leftPt ?: 0f
+    internal fun rightIndent(p: DocxParagraph) = p.layout?.rightPt ?: 0f
+
+    /** How far the first line is moved from the rest (negative: hanging). Not for list items, which have their own mark. */
+    internal fun firstLineIndent(p: DocxParagraph) = if (p.list != null) 0f else p.layout?.firstLinePt ?: 0f
 
     /** How many characters of this paragraph's text fit on a line. */
     fun charsPerLine(p: DocxParagraph, widthPt: Float): Int =
-        maxOf(1, ((widthPt - indent(p)) / (fontPt(p) * CHAR_WIDTH_EM)).toInt())
+        maxOf(1, ((widthPt - indent(p) - rightIndent(p)) / (fontPt(p) * CHAR_WIDTH_EM)).toInt())
 
     fun lineCount(p: DocxParagraph, widthPt: Float): Int {
         val per = charsPerLine(p, widthPt)
@@ -96,7 +116,16 @@ object PageLayout {
         return text.split('\n').sumOf { line: String -> maxOf(1, ceil(line.length / per.toDouble()).toInt()) }
     }
 
-    fun lineHeightPt(p: DocxParagraph) = fontPt(p) * LINE_FACTOR
+    /** The height of one line: the text's natural height (1.2 times its size) times the line spacing, or the file's exact / minimum height. */
+    fun lineHeightPt(p: DocxParagraph): Float {
+        val natural = fontPt(p) * LINE_FACTOR
+        return when (val spacing = p.layout?.line) {
+            null -> natural
+            is LineSpacing.Multiple -> natural * spacing.factor
+            is LineSpacing.AtLeast -> maxOf(natural, spacing.pt)
+            is LineSpacing.Exactly -> spacing.pt
+        }
+    }
 
     /** A picture's size on the page in points: its pixels at 96 per inch, no wider than the page's text and no taller than it. */
     fun imageBoxPt(image: DocxImage, widthPt: Float, heightPt: Float): Pair<Float, Float> {
