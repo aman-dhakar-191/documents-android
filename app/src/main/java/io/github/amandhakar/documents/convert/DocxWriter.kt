@@ -143,7 +143,9 @@ object DocxWriter {
         images += image to "image${images.size + 1}.$extension"
         val index = images.size
         out.append(
-            "<w:p><w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"$cx\" cy=\"$cy\"/>" +
+            "<w:p><w:pPr>" + (if (image.pageBreakBefore) "<w:pageBreakBefore/>" else "") +
+                "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/><w:jc w:val=\"center\"/></w:pPr>" +
+                "<w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"$cx\" cy=\"$cy\"/>" +
                 "<wp:docPr id=\"$index\" name=\"Picture $index\"/><wp:cNvGraphicFramePr/>" +
                 "<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic>" +
                 "<pic:nvPicPr><pic:cNvPr id=\"$index\" name=\"Picture $index\"/><pic:cNvPicPr/></pic:nvPicPr>" +

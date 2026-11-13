@@ -289,12 +289,16 @@ object DocxParser {
             val images = ArrayList<DocxImage>()
             val flags = RunFlags()
             collectRuns(p, runs, images, flags)
-            out += DocxParagraph(
-                mergeRuns(runs), heading, list, align,
-                pageBreakBefore = pPr?.child("pageBreakBefore").isOn(),
-                pageBreakAfter = flags.pageBreak,
-            )
-            out += images
+            val breakBefore = pPr?.child("pageBreakBefore").isOn()
+            if (runs.isEmpty() && images.isNotEmpty() && list == null) {
+                // A paragraph that only holds picture(s): the pictures are the content. An empty paragraph in front of
+                // them would take up room and could push a page-sized picture onto the next page.
+                images.forEachIndexed { i, image -> out += if (i == 0 && breakBefore) DocxImage(image.name, image.bytes, pageBreakBefore = true) else image }
+                if (flags.pageBreak) out += DocxParagraph(emptyList(), pageBreakAfter = true)
+            } else {
+                out += DocxParagraph(mergeRuns(runs), heading, list, align, pageBreakBefore = breakBefore, pageBreakAfter = flags.pageBreak)
+                out += images
+            }
         }
 
         /** Things a run can say about the paragraph around it. */

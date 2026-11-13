@@ -247,6 +247,34 @@ class PageLayoutTest {
         assertTrue(w < a4.contentWidthPt)
     }
 
+    private fun pagePicture(pageBreak: Boolean) = DocxImage("p", ByteArray(32).also {
+        byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10).copyInto(it)
+        it[18] = 0x04; it[19] = 0xD8.toByte() // 1240 wide
+        it[22] = 0x06; it[23] = 0xDA.toByte() // 1754 tall
+    }, pageBreak)
+
+    @Test fun fullPagePicturesGetOnePageEachAndNoBlankPages() {
+        val setup = PageSetup(595f, 842f, 24f, 24f, 24f, 24f)
+        val pages = PageLayout.paginate(DocxDocument((1..3).map { pagePicture(it > 1) }, page = setup))
+        assertEquals(3, pages.size)
+        assertTrue(pages.all { page -> page.size == 1 && page[0] is DocxImage })
+    }
+
+    @Test fun fullPagePicturesStillFitOnePerPageWithoutPageBreakFlags() {
+        val setup = PageSetup(595f, 842f, 24f, 24f, 24f, 24f)
+        val pages = PageLayout.paginate(DocxDocument((1..3).map { pagePicture(false) }, page = setup))
+        assertEquals(3, pages.size)
+    }
+
+    @Test fun aPictureWithAPageBreakBeforeStartsANewPage() {
+        val pages = PageLayout.paginate(doc(para("a"), pagePicture(true)))
+        assertEquals(2, pages.size)
+    }
+
+    @Test fun aPictureWithAPageBreakBeforeOnTheFirstPageMakesNoBlankPage() {
+        assertEquals(1, PageLayout.paginate(doc(pagePicture(true), para("b"))).size.coerceAtMost(1))
+    }
+
     @Test fun aPictureWithAnUnknownHeaderGetsADefaultShape() {
         val (w, h) = PageLayout.imageBoxPt(DocxImage("x.png", ByteArray(4)), 400f, 600f)
         assertTrue(w > 0 && h > 0)

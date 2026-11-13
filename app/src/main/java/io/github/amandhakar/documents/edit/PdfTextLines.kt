@@ -64,10 +64,27 @@ object PdfTextLines {
 
         override fun writeString(text: String, textPositions: MutableList<TextPosition>) {
             if (textPositions.isEmpty()) return
-            val first = textPositions.first()
-            val last = textPositions.last()
+            // PdfBox may hand over a whole row across the page as one chunk (two columns, table cells): cut it where
+            // there is a wide gap, so each piece is its own word and columns are not glued into one line.
+            val glyphs = textPositions.map { Glyph(it.unicode ?: "", it.xDirAdj, it.widthDirAdj, it.fontSizeInPt) }
+            val pieces = WordSplitting.split(glyphs)
+            if (pieces.size > 1 && WordSplitting.sameText(pieces, text)) {
+                var start = 0
+                for (piece in pieces) {
+                    addWord(piece.joinToString("") { it.text }, textPositions.subList(start, start + piece.size))
+                    start += piece.size
+                }
+            } else {
+                addWord(text, textPositions)
+            }
+        }
+
+        private fun addWord(text: String, positions: List<TextPosition>) {
+            if (positions.isEmpty() || text.isBlank()) return
+            val first = positions.first()
+            val last = positions.last()
             val size = first.fontSizeInPt
-            val height = maxOf(textPositions.maxOf { it.heightDir }, size * 0.7f)
+            val height = maxOf(positions.maxOf { it.heightDir }, size * 0.7f)
             words += TextWord(
                 text = text,
                 left = first.xDirAdj,

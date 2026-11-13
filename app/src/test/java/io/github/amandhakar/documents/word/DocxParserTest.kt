@@ -237,6 +237,33 @@ class DocxParserTest {
         assertEquals(png.toList(), image.bytes.toList())
     }
 
+    @Test fun aParagraphThatOnlyHoldsAPictureLeavesNoEmptyParagraphBehind() {
+        val doc = parse("word/document.xml" to body(drawing + drawing), "word/_rels/document.xml.rels" to rels, "word/media/pic.png" to png)
+        assertEquals(2, doc.blocks.size)
+        assertTrue(doc.blocks.all { it is DocxImage })
+    }
+
+    @Test fun aPictureWithTextInTheSameParagraphKeepsTheText() {
+        val xml = "<w:p><w:r><w:t>caption</w:t></w:r><w:r><w:drawing><wp:inline><a:graphic><a:graphicData><a:blip r:embed=\"rId5\"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"
+        val doc = parse("word/document.xml" to body(xml), "word/_rels/document.xml.rels" to rels, "word/media/pic.png" to png)
+        assertEquals("caption", (doc.blocks[0] as DocxParagraph).text)
+        assertTrue(doc.blocks[1] is DocxImage)
+    }
+
+    @Test fun aPageBreakBeforeOnAPicturesParagraphMovesToThePicture() {
+        val xml = drawing.replace("<w:p>", "<w:p><w:pPr><w:pageBreakBefore/></w:pPr>")
+        val doc = parse("word/document.xml" to body(xml), "word/_rels/document.xml.rels" to rels, "word/media/pic.png" to png)
+        assertEquals(1, doc.blocks.size)
+        assertTrue((doc.blocks[0] as DocxImage).pageBreakBefore)
+    }
+
+    @Test fun aPageBreakAfterAPictureKeepsABreakParagraphAfterIt() {
+        val xml = drawing.replace("</w:drawing></w:r>", "</w:drawing><w:br w:type=\"page\"/></w:r>")
+        val doc = parse("word/document.xml" to body(xml), "word/_rels/document.xml.rels" to rels, "word/media/pic.png" to png)
+        assertTrue(doc.blocks[0] is DocxImage)
+        assertTrue((doc.blocks[1] as DocxParagraph).pageBreakAfter)
+    }
+
     @Test fun aMissingPictureIsSkipped() {
         val doc = parse("word/document.xml" to body(drawing), "word/_rels/document.xml.rels" to rels)
         assertTrue(doc.blocks.none { it is DocxImage })

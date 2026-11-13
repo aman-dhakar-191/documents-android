@@ -262,7 +262,10 @@ object PdfParagraphs {
 
     /** Word content with each page as a picture. [pictures] are png or jpeg bytes, one per page. */
     fun picturesToDocx(pictures: List<ByteArray>, pageWidthPt: Float, pageHeightPt: Float): DocxDocument =
-        DocxDocument(pictures.mapIndexed { i, b -> DocxImage("page${i + 1}", b) }, page = PageSetup(pageWidthPt, pageHeightPt, 18f, 18f, 18f, 18f))
+        DocxDocument(
+            pictures.mapIndexed { i, b -> DocxImage("page${i + 1}", b, pageBreakBefore = i > 0) },
+            page = PageSetup(pageWidthPt, pageHeightPt, 24f, 24f, 24f, 24f),
+        )
 
     // ---- PowerPoint ----
 
