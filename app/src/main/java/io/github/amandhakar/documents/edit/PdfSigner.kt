@@ -98,9 +98,8 @@ object PdfSigner {
             try {
                 val count = TextEraser.erase(doc, pageIndex, boxes)
                 if (count == 0) failed += pageIndex else removed += count
-            } catch (e: UnsupportedOperationException) {
-                failed += pageIndex
-            } catch (e: IOException) {
+            } catch (e: Exception) {
+                // Removing the old text is an extra: whatever goes wrong on a page, the change is still covered and saved.
                 failed += pageIndex
             }
         }
