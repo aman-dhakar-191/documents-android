@@ -113,6 +113,7 @@ object PageLayout {
     fun heightOf(block: DocxBlock, page: PageSetup, widthPt: Float = page.contentWidthPt): Float = when (block) {
         is DocxParagraph -> spaceBefore(block) + lineCount(block, widthPt) * lineHeightPt(block) + spaceAfter(block)
         is DocxImage -> imageBoxPt(block, widthPt, page.contentHeightPt).second + 6f
+        is DocxColumns -> 0f
         is DocxTable -> {
             var total = 8f
             for (row in block.rows) {
@@ -209,6 +210,139 @@ object PageLayout {
             if (original is DocxParagraph && original.pageBreakAfter) newPage()
         }
         if (current.isNotEmpty() || pages.isEmpty()) pages += current
+        return pages
+    }
+
+    /** The narrowest a column is allowed to get: more columns than fit are dropped (a damaged file can't make slivers). */
+    private const val MIN_COLUMN_PT = 36f
+
+    /** How many columns of this gap really fit across the page's text width. */
+    fun effectiveColumns(requested: Int, gapPt: Float, page: PageSetup): Int {
+        var n = requested.coerceIn(1, 4)
+        while (n > 1 && (page.contentWidthPt - (n - 1) * gapPt) / n < MIN_COLUMN_PT) n--
+        return n
+    }
+
+    fun columnWidthPt(columns: Int, gapPt: Float, page: PageSetup): Float =
+        if (columns <= 1) page.contentWidthPt else (page.contentWidthPt - (columns - 1) * gapPt) / columns
+
+    /** A stretch of a page laid out in [columns].size columns [gapPt] apart; [columns] holds each column's blocks, left to right. */
+    class ColumnBand(val columns: List<List<DocxBlock>>, val gapPt: Float)
+
+    /** One page: its bands from top to bottom (a full-width title, then two columns, ...). */
+    class ColumnPage(val bands: List<ColumnBand>)
+
+    /**
+     * Like [paginate], but follows the document's columns: text fills the first column down the page, then the next,
+     * then the next page. A new [DocxColumns] section within a page starts a new band under the one above. Columns of a
+     * band that ends mid-page are not balanced (Word balances them at a continuous break), and all pages use the size
+     * of the last section.
+     */
+    fun paginateColumns(doc: DocxDocument): List<ColumnPage> {
+        val real = doc.blocks.filter { it !is DocxColumns }
+        if (doc.blocks.none { it is DocxColumns && it.count > 1 } && real.none { it is DocxParagraph && it.columnBreakAfter }) {
+            return paginate(DocxDocument(real, doc.truncated, doc.page)).map { ColumnPage(listOf(ColumnBand(listOf(it), 0f))) }
+        }
+        val page = doc.page
+        val pageLimit = page.contentHeightPt
+        val pages = ArrayList<ColumnPage>()
+        var bands = ArrayList<ColumnBand>()
+        var n = 1
+        var gap = 0f
+        var cols = ArrayList<MutableList<DocxBlock>>()
+        var heights = ArrayList<Float>()
+        var col = 0
+        var bandTop = 0f
+
+        fun freshBand() {
+            cols = ArrayList()
+            heights = ArrayList()
+            repeat(n) { cols += ArrayList<DocxBlock>(); heights += 0f }
+            col = 0
+        }
+
+        fun bandHasContent() = cols.any { it.isNotEmpty() }
+
+        fun closeBand() {
+            if (bandHasContent()) {
+                bands += ColumnBand(cols.map { it.toList() }, gap)
+                bandTop += heights.max()
+            }
+        }
+
+        fun finishPage() {
+            closeBand()
+            pages += ColumnPage(bands)
+            bands = ArrayList()
+            bandTop = 0f
+            freshBand()
+        }
+
+        fun pageHasContent() = bands.isNotEmpty() || bandHasContent()
+
+        fun nextSlot() {
+            if (col < n - 1) col++ else finishPage()
+        }
+
+        freshBand()
+        for (original in doc.blocks) {
+            if (original is DocxColumns) {
+                val count = effectiveColumns(original.count, original.gapPt, page)
+                if (original.newPage && pageHasContent()) finishPage()
+                if (count != n || original.gapPt != gap) {
+                    closeBand()
+                    n = count
+                    gap = original.gapPt
+                    freshBand()
+                }
+                continue
+            }
+            if ((original is DocxParagraph && original.pageBreakBefore || original is DocxImage && original.pageBreakBefore) && pageHasContent()) finishPage()
+            var block: DocxBlock? = original
+            var guard = 0
+            while (block != null && guard++ < 10_000) {
+                val width = columnWidthPt(n, gap, page)
+                val limit = pageLimit - bandTop
+                val used = heights[col]
+                val h = heightOf(block, page, width)
+                if (used + h <= limit) {
+                    cols[col] += block
+                    heights[col] = used + h
+                    block = null
+                    continue
+                }
+                if (block is DocxParagraph) {
+                    val lineH = lineHeightPt(block)
+                    val room = floor((limit - used - spaceBefore(block)) / lineH).toInt()
+                    val lines = lineCount(block, width)
+                    val fitsMore = room >= 2 && lines > room && block.text.length > 1
+                    val slotEmpty = cols[col].isEmpty() && bandTop == 0f
+                    val tallerThanSlot = slotEmpty && h > limit
+                    if (fitsMore || tallerThanSlot) {
+                        val take = if (fitsMore) room else maxOf(1, floor((limit - spaceBefore(block)) / lineH).toInt())
+                        if (lines > take && block.text.length > 1) {
+                            val (a, b) = split(block, take * charsPerLine(block, width))
+                            cols[col] += a
+                            heights[col] = used + heightOf(a, page, width)
+                            nextSlot()
+                            block = b
+                            continue
+                        }
+                    }
+                }
+                if (cols[col].isEmpty() && bandTop == 0f) {
+                    // Nothing more can be done: it is taller than a column on its own.
+                    cols[col] += block
+                    heights[col] = used + h
+                    block = null
+                } else {
+                    nextSlot()
+                }
+            }
+            if (original is DocxParagraph && (original.pageBreakAfter)) finishPage()
+            else if (original is DocxParagraph && original.columnBreakAfter) nextSlot()
+        }
+        if (pageHasContent() || pages.isEmpty()) finishPage()
         return pages
     }
 }

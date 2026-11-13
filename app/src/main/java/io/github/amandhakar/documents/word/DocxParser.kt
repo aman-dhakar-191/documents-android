@@ -35,6 +35,8 @@ object DocxParser {
     private const val STYLES = "word/styles.xml"
     private const val NUMBERING = "word/numbering.xml"
     private const val RELS = "word/_rels/document.xml.rels"
+    private const val MAX_COLUMNS = 4
+    private const val DEFAULT_GAP_TWIPS = 720
 
 
     fun parse(input: InputStream, limits: DocxLimits = DocxLimits()): DocxDocument {
@@ -51,6 +53,7 @@ object DocxParser {
         for (i in 0 until all.length) ids[all.item(i) as Element] = i
         val reader = BodyReader(styles, numbering, rels, parts.media, limits, ids)
         reader.readBlocks(body)
+        reader.addColumns(body.child("sectPr"))
         return DocxDocument(reader.blocks, reader.truncated, readPage(body.child("sectPr")))
     }
 
@@ -228,6 +231,36 @@ object DocxParser {
             readInto(container, blocks)
         }
 
+        /** Where each section ended (a block count) and what it said about columns, in order. */
+        private class SectionEnd(val endIndex: Int, val columns: Int, val gapPt: Float, val continuous: Boolean)
+
+        private val sections = ArrayList<SectionEnd>()
+
+        private fun noteSection(sect: Element) {
+            val cols = sect.child("cols")
+            val count = (cols?.wAttr("num")?.toIntOrNull() ?: 1).coerceIn(1, MAX_COLUMNS)
+            val gap = (cols?.wAttr("space")?.toIntOrNull() ?: DEFAULT_GAP_TWIPS).coerceIn(0, 1440) / 20f
+            sections += SectionEnd(blocks.size, count, gap, sect.valOf("type") == "continuous")
+        }
+
+        /**
+         * Puts a [DocxColumns] marker at the start of every section whose column count differs from the one before it.
+         * [last] is the properties of the final section (the body's own `sectPr`), the others were noted on the way.
+         */
+        fun addColumns(last: Element?) {
+            if (last != null) noteSection(last)
+            var previous = 1
+            var start = 0
+            val inserts = ArrayList<Pair<Int, DocxColumns>>()
+            for ((i, s) in sections.withIndex()) {
+                if (s.columns != previous) inserts += start to DocxColumns(s.columns, s.gapPt, newPage = i > 0 && !s.continuous)
+                previous = s.columns
+                start = s.endIndex
+            }
+            // From the back, so earlier positions stay right.
+            for ((index, marker) in inserts.asReversed()) blocks.add(index.coerceIn(0, blocks.size), marker)
+        }
+
         private fun readInto(container: Element, out: MutableList<DocxBlock>) {
             for (e in container.childElements()) {
                 if (e.namespaceURI != W) continue
@@ -236,7 +269,11 @@ object DocxParser {
                     return
                 }
                 when (e.localName) {
-                    "p" -> readParagraph(e, out)
+                    "p" -> {
+                        readParagraph(e, out)
+                        // A paragraph that carries section properties ends a section (only the body's own sections count).
+                        if (out === blocks) e.child("pPr")?.child("sectPr")?.let { noteSection(it) }
+                    }
                     "tbl" -> out += readTable(e)
                     "sdt" -> e.child("sdtContent")?.let { readInto(it, out) } // a content control: its content is the real thing
                 }
@@ -301,7 +338,10 @@ object DocxParser {
                 images.forEachIndexed { i, image -> out += if (i == 0 && breakBefore) DocxImage(image.name, image.bytes, pageBreakBefore = true) else image }
                 if (flags.pageBreak) out += DocxParagraph(emptyList(), pageBreakAfter = true)
             } else {
-                out += DocxParagraph(mergeRuns(runs), heading, list, align, pageBreakBefore = breakBefore, pageBreakAfter = flags.pageBreak, id = ids[p] ?: -1, editable = !hasField(p))
+                out += DocxParagraph(
+                    mergeRuns(runs), heading, list, align, pageBreakBefore = breakBefore, pageBreakAfter = flags.pageBreak,
+                    id = ids[p] ?: -1, editable = !hasField(p), columnBreakAfter = flags.columnBreak,
+                )
                 out += images
             }
         }
@@ -309,6 +349,7 @@ object DocxParser {
         /** Things a run can say about the paragraph around it. */
         private class RunFlags {
             var pageBreak = false
+            var columnBreak = false
         }
 
         /** True when the paragraph holds a field: editing its text could break the field. */
@@ -338,7 +379,11 @@ object DocxParser {
                 when (c.localName) {
                     "t" -> text.append(c.textContent)
                     "tab" -> text.append('\t')
-                    "br", "cr" -> if (c.wAttr("type") == "page") flags.pageBreak = true else text.append('\n')
+                    "br", "cr" -> when (c.wAttr("type")) {
+                        "page" -> flags.pageBreak = true
+                        "column" -> flags.columnBreak = true
+                        else -> text.append('\n')
+                    }
                     "noBreakHyphen" -> text.append('-')
                     "drawing", "pict" -> findImage(c)?.let { images += it }
                 }

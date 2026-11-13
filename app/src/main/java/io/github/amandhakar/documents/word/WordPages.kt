@@ -65,7 +65,7 @@ private class PageScale(val dpPerPt: Float, val fontScale: Float) {
  */
 @Composable
 fun WordPagesScreen(document: DocxDocument, zoom: Float, modifier: Modifier = Modifier) {
-    val pages = remember(document) { PageLayout.paginate(document) }
+    val pages = remember(document) { PageLayout.paginateColumns(document) }
     val setup = document.page
     val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -90,7 +90,17 @@ fun WordPagesScreen(document: DocxDocument, zoom: Float, modifier: Modifier = Mo
                             ),
                     ) {
                         Column(Modifier.fillMaxWidth()) {
-                            for (block in blocks) PageBlock(block, setup, scale)
+                            for (band in blocks.bands) {
+                                val count = band.columns.size
+                                val columnWidth = PageLayout.columnWidthPt(count, band.gapPt, setup)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(scale.dp(band.gapPt))) {
+                                    for (column in band.columns) {
+                                        Column(Modifier.width(scale.dp(columnWidth))) {
+                                            for (block in column) PageBlock(block, setup, scale, columnWidth)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     Text(
@@ -117,6 +127,7 @@ fun WordPagesScreen(document: DocxDocument, zoom: Float, modifier: Modifier = Mo
 private fun PageBlock(block: DocxBlock, setup: PageSetup, scale: PageScale, widthPt: Float = setup.contentWidthPt) {
     when (block) {
         is DocxParagraph -> PageParagraph(block, scale)
+        is DocxColumns -> Unit
         is DocxTable -> PageTable(block, setup, scale, widthPt)
         is DocxImage -> {
             val bitmap by produceState<android.graphics.Bitmap?>(null, block) {

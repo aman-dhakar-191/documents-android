@@ -3,6 +3,7 @@ package io.github.amandhakar.documents.convert
 import io.github.amandhakar.documents.ooxml.XmlText
 import io.github.amandhakar.documents.word.DocxAlign
 import io.github.amandhakar.documents.word.DocxBlock
+import io.github.amandhakar.documents.word.DocxColumns
 import io.github.amandhakar.documents.word.DocxDocument
 import io.github.amandhakar.documents.word.DocxImage
 import io.github.amandhakar.documents.word.DocxParagraph
@@ -30,11 +31,32 @@ object DocxWriter {
     fun write(doc: DocxDocument, out: OutputStream) {
         val images = ArrayList<Pair<DocxImage, String>>() // picture and its file name inside the zip
         val body = StringBuilder()
-        for (block in doc.blocks) block(block, doc.page, body, images)
+        // Sections: a DocxColumns marker starts one; Word keeps a section's properties at its END, so they go in the
+        // last paragraph before the marker (or in a paragraph of their own when that block isn't a paragraph).
+        var columns = DocxColumns(1, 0f)
+        var sections = 0
+        var wrote = false
+        val blocks = doc.blocks
+        for ((i, b) in blocks.withIndex()) {
+            if (b is DocxColumns) {
+                if (wrote) {
+                    // Only reached for a marker after content whose paragraph didn't take the section end (see below).
+                    val previous = blocks.getOrNull(i - 1)
+                    if (previous !is DocxParagraph && previous !is DocxColumns) body.append("<w:p><w:pPr>${sectPr(doc.page, columns, sections > 0)}</w:pPr></w:p>")
+                    sections++
+                }
+                columns = b
+                continue
+            }
+            val next = blocks.getOrNull(i + 1)
+            val endsSection = b is DocxParagraph && next is DocxColumns
+            if (b is DocxParagraph) paragraph(b, body, if (endsSection) sectPr(doc.page, columns, sections > 0) else null) else block(b, doc.page, body, images)
+            wrote = true
+        }
         val documentXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
             "<w:document xmlns:w=\"$W\" xmlns:r=\"$R\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" " +
             "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">" +
-            "<w:body>$body${sectPr(doc.page)}</w:body></w:document>"
+            "<w:body>$body${sectPr(doc.page, columns, sections > 0)}</w:body></w:document>"
 
         ZipOutputStream(out).use { z ->
             fun put(name: String, text: String) = put(z, name, text.toByteArray(Charsets.UTF_8))
@@ -80,20 +102,25 @@ object DocxWriter {
 
     private fun twips(pt: Float) = (pt * 20).roundToInt()
 
-    private fun sectPr(p: PageSetup) =
-        "<w:sectPr><w:pgSz w:w=\"${twips(p.widthPt)}\" w:h=\"${twips(p.heightPt)}\"/>" +
+    /** The properties of a section: its page, its columns, and (after the first section) that it continues on the same page. */
+    private fun sectPr(p: PageSetup, columns: DocxColumns = DocxColumns(1, 0f), continuous: Boolean = false): String {
+        val cols = if (columns.count > 1) "<w:cols w:num=\"${columns.count}\" w:space=\"${twips(columns.gapPt)}\"/>" else ""
+        return "<w:sectPr>" + (if (continuous) "<w:type w:val=\"continuous\"/>" else "") +
+            "<w:pgSz w:w=\"${twips(p.widthPt)}\" w:h=\"${twips(p.heightPt)}\"/>" +
             "<w:pgMar w:top=\"${twips(p.marginTopPt)}\" w:right=\"${twips(p.marginRightPt)}\" w:bottom=\"${twips(p.marginBottomPt)}\" " +
-            "w:left=\"${twips(p.marginLeftPt)}\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/></w:sectPr>"
+            "w:left=\"${twips(p.marginLeftPt)}\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/>$cols</w:sectPr>"
+    }
 
     private fun block(b: DocxBlock, page: PageSetup, out: StringBuilder, images: MutableList<Pair<DocxImage, String>>) {
         when (b) {
-            is DocxParagraph -> paragraph(b, out)
+            is DocxParagraph -> paragraph(b, out, null)
             is DocxImage -> image(b, page, out, images)
+            is DocxColumns -> Unit // written as section properties, see write()
             is DocxTable -> Unit // not written: see the class comment
         }
     }
 
-    private fun paragraph(p: DocxParagraph, out: StringBuilder) {
+    private fun paragraph(p: DocxParagraph, out: StringBuilder, sectionEnd: String?) {
         out.append("<w:p><w:pPr>")
         if (p.headingLevel in 1..3) out.append("<w:pStyle w:val=\"Heading${p.headingLevel}\"/>")
         if (p.pageBreakBefore) out.append("<w:pageBreakBefore/>")
@@ -104,6 +131,7 @@ object DocxWriter {
             DocxAlign.Justify -> out.append("<w:jc w:val=\"both\"/>")
             DocxAlign.Start -> Unit
         }
+        if (sectionEnd != null) out.append(sectionEnd)
         out.append("</w:pPr>")
         p.list?.label?.takeIf { it.isNotEmpty() }?.let { out.append("<w:r><w:t xml:space=\"preserve\">${XmlText.escape(it)}</w:t><w:tab/></w:r>") }
         for (run in p.runs) {
@@ -132,6 +160,7 @@ object DocxWriter {
             out.append("</w:r>")
         }
         if (p.pageBreakAfter) out.append("<w:r><w:br w:type=\"page\"/></w:r>")
+        if (p.columnBreakAfter) out.append("<w:r><w:br w:type=\"column\"/></w:r>")
         out.append("</w:p>")
     }
 

@@ -33,9 +33,18 @@ data class DocxParagraph(
     val id: Int = -1,
     /** False for a paragraph that holds a field (page number, contents, a link field...) which editing the text would break. */
     val editable: Boolean = true,
+    /** A column break comes after this paragraph's text: what follows starts the next column (or page, from the last column). */
+    val columnBreakAfter: Boolean = false,
 ) : DocxBlock {
     val text: String get() = runs.joinToString("") { it.text }
 }
+
+/**
+ * Not text: from here the page is laid out in [count] equal columns, [gapPt] apart (1 means one full-width column).
+ * Word stores this per section; it is read from the section's properties. [newPage] is true when the section starts
+ * on a new page rather than continuing the page above.
+ */
+data class DocxColumns(val count: Int, val gapPt: Float, val newPage: Boolean = false) : DocxBlock
 
 /** Rows of cells; each cell holds blocks (paragraphs, or even another table). */
 data class DocxTable(val rows: List<List<List<DocxBlock>>>) : DocxBlock
@@ -86,12 +95,13 @@ data class PageSetup(
 /** What was read from a .docx. [truncated] is true when the file was bigger than the app shows. */
 class DocxDocument(val blocks: List<DocxBlock>, val truncated: Boolean = false, val page: PageSetup = PageSetup()) {
     /** All the text, one paragraph per line (tables: cells separated by tabs). */
-    fun plainText(): String = blocks.joinToString("\n") { plain(it) }
+    fun plainText(): String = blocks.filter { it !is DocxColumns }.joinToString("\n") { plain(it) }
 
     private fun plain(block: DocxBlock): String = when (block) {
         is DocxParagraph -> block.text
         is DocxTable -> block.rows.joinToString("\n") { row -> row.joinToString("\t") { cell -> cell.joinToString(" ") { plain(it) } } }
         is DocxImage -> ""
+        is DocxColumns -> ""
     }
 }
 
