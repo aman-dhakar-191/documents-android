@@ -87,7 +87,6 @@ import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.ViewerState
 import io.github.amandhakar.documents.document.Zoom
-import io.github.amandhakar.documents.edit.FontFamilyChoice
 import io.github.amandhakar.documents.edit.Marks
 import io.github.amandhakar.documents.edit.PdfText
 import io.github.amandhakar.documents.edit.TextBoxMath
@@ -134,6 +133,7 @@ fun DocumentsApp(
     var editingWord by remember { mutableStateOf<DocxParagraph?>(null) }
     var editingSlide by remember { mutableStateOf<Pair<PptxSlide, PptxParagraph>?>(null) }
     var askOfficeSave by rememberSaveable { mutableStateOf(false) }
+    var showFontLicences by rememberSaveable { mutableStateOf(false) }
     var askOfficeDiscard by rememberSaveable { mutableStateOf(false) }
     // Scripts in a web page are off until the person turns them on (per opening).
     var allowScripts by rememberSaveable { mutableStateOf(false) }
@@ -402,17 +402,7 @@ fun DocumentsApp(
                         },
                     )
                     Text("Font (matched to the old text; change it if it is wrong)", style = MaterialTheme.typography.labelMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for ((family, label) in listOf(
-                            FontFamilyChoice.Sans to "Sans",
-                            FontFamilyChoice.Serif to "Serif",
-                            FontFamilyChoice.Mono to "Mono",
-                        )) {
-                            ChoiceButton(label, font.family == family) { font = font.copy(family = family) }
-                        }
-                        ChoiceButton("B", font.bold) { font = font.copy(bold = !font.bold) }
-                        ChoiceButton("I", font.italic) { font = font.copy(italic = !font.italic) }
-                    }
+                    FontPicker(font) { font = it }
                   }
                 },
                 confirmButton = {
@@ -465,6 +455,7 @@ fun DocumentsApp(
                 onDismiss = { editingSlide = null },
             )
         }
+        if (showFontLicences) FontLicencesDialog { showFontLicences = false }
         if (askOfficeSave) {
             SaveSheet(
                 summary = OfficeEditMessages.changes(officeEdit.changeCount),
@@ -585,6 +576,15 @@ fun DocumentsApp(
                                         onClick = {
                                             officeMenu = false
                                             officeEditViewModel.undo()
+                                        },
+                                    )
+                                }
+                                if (state is ViewerState.Docx) {
+                                    DropdownMenuItem(
+                                        text = { Text("Font licences") },
+                                        onClick = {
+                                            officeMenu = false
+                                            showFontLicences = true
                                         },
                                     )
                                 }

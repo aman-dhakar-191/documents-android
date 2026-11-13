@@ -1,6 +1,5 @@
 package io.github.amandhakar.documents.word
 
-import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.min
 
@@ -109,16 +108,27 @@ object PageLayout {
     fun charsPerLine(p: DocxParagraph, widthPt: Float): Int =
         maxOf(1, ((widthPt - indent(p) - rightIndent(p)) / (fontPt(p) * CHAR_WIDTH_EM)).toInt())
 
-    fun lineCount(p: DocxParagraph, widthPt: Float): Int {
-        val per = charsPerLine(p, widthPt)
-        val text = p.text
-        if (text.isEmpty()) return 1
-        return text.split('\n').sumOf { line: String -> maxOf(1, ceil(line.length / per.toDouble()).toInt()) }
+    /** The bundled font standing in for the paragraph's text: the one the file gives its largest run, else the paragraph's own font. */
+    fun faceOf(p: DocxParagraph): WordFace {
+        val biggest = p.runs.filter { it.text.isNotEmpty() }.maxByOrNull { runPt(p, it) }
+        return WordFonts.faceFor(biggest?.fontName ?: p.layout?.fontName)
     }
+
+    private fun wrapRuns(p: DocxParagraph): List<WrapRun> = p.runs.filter { it.text.isNotEmpty() }.map { run ->
+        WrapRun(run.text, WordFonts.faceFor(run.fontName ?: p.layout?.fontName), run.bold || p.headingLevel > 0, run.italic, runPt(p, run))
+    }
+
+    /** The end of each line (a character offset into the paragraph's text), from the real letter widths of the bundled fonts. */
+    fun lineEnds(p: DocxParagraph, widthPt: Float): List<Int> {
+        val room = widthPt - indent(p) - rightIndent(p)
+        return TextWrap.lineEnds(wrapRuns(p), room - firstLineIndent(p), room)
+    }
+
+    fun lineCount(p: DocxParagraph, widthPt: Float): Int = lineEnds(p, widthPt).size
 
     /** The height of one line: the text's natural height (1.2 times its size) times the line spacing, or the file's exact / minimum height. */
     fun lineHeightPt(p: DocxParagraph): Float {
-        val natural = fontPt(p) * LINE_FACTOR
+        val natural = fontPt(p) * if (p.layout != null) WordFonts.lineHeightEm(faceOf(p)) else LINE_FACTOR
         return when (val spacing = p.layout?.line) {
             null -> natural
             is LineSpacing.Multiple -> natural * spacing.factor
@@ -165,6 +175,18 @@ object PageLayout {
         var cut = chars.coerceIn(1, maxOf(1, text.length - 1))
         val space = text.lastIndexOf(' ', cut)
         if (space > cut / 2) cut = space + 1
+        return splitExactly(p, cut)
+    }
+
+    /** Cuts the first [lines] lines off a paragraph laid out [widthPt] wide: the first part is exactly those lines. */
+    fun splitAtLine(p: DocxParagraph, widthPt: Float, lines: Int): Pair<DocxParagraph, DocxParagraph> {
+        val ends = lineEnds(p, widthPt)
+        return splitExactly(p, ends[(lines - 1).coerceIn(0, ends.size - 1)])
+    }
+
+    private fun splitExactly(p: DocxParagraph, requested: Int): Pair<DocxParagraph, DocxParagraph> {
+        val text = p.text
+        val cut = requested.coerceIn(1, maxOf(1, text.length - 1))
         val first = ArrayList<DocxRun>()
         val rest = ArrayList<DocxRun>()
         var seen = 0
@@ -219,7 +241,7 @@ object PageLayout {
                     if (fitsMore || tallerThanPage) {
                         val take = if (fitsMore) room else maxOf(1, floor((limit - spaceBefore(block)) / lineH).toInt())
                         if (lines > take && block.text.length > 1) {
-                            val (a, b) = split(block, take * charsPerLine(block, width))
+                            val (a, b) = splitAtLine(block, width, take)
                             current += a
                             newPage()
                             block = b
@@ -350,7 +372,7 @@ object PageLayout {
                     if (fitsMore || tallerThanSlot) {
                         val take = if (fitsMore) room else maxOf(1, floor((limit - spaceBefore(block)) / lineH).toInt())
                         if (lines > take && block.text.length > 1) {
-                            val (a, b) = split(block, take * charsPerLine(block, width))
+                            val (a, b) = splitAtLine(block, width, take)
                             cols[col] += a
                             heights[col] = used + heightOf(a, page, width)
                             nextSlot()

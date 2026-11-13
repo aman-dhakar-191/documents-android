@@ -162,7 +162,7 @@ class ParagraphLayoutPaginationTest {
     }
 
     @Test fun lineSpacingScalesOrFixesTheLineHeight() {
-        val natural = 11f * 1.2f
+        val natural = 11f * WordFonts.lineHeightEm(WordFace.Carlito) // the default font, Calibri's stand-in
         assertEquals(natural * 1.5f, PageLayout.lineHeightPt(para("x", ParagraphLayout(line = LineSpacing.Multiple(1.5f)))), 0.001f)
         assertEquals(20f, PageLayout.lineHeightPt(para("x", ParagraphLayout(line = LineSpacing.Exactly(20f)))), 0.001f)
         assertEquals(natural, PageLayout.lineHeightPt(para("x", ParagraphLayout(line = LineSpacing.AtLeast(5f)))), 0.001f)

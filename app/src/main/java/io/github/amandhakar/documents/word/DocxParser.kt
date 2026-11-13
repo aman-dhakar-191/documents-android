@@ -35,6 +35,8 @@ object DocxParser {
     private const val STYLES = "word/styles.xml"
     private const val NUMBERING = "word/numbering.xml"
     private const val RELS = "word/_rels/document.xml.rels"
+    private const val THEME = "word/theme/theme1.xml"
+    private const val DML = "http://schemas.openxmlformats.org/drawingml/2006/main"
     private const val MAX_COLUMNS = 4
     private const val DEFAULT_GAP_TWIPS = 720
     private const val AUTO_SPACING_PT = 14f
@@ -43,7 +45,8 @@ object DocxParser {
     fun parse(input: InputStream, limits: DocxLimits = DocxLimits()): DocxDocument {
         val parts = readParts(input, limits)
         val documentXml = parts.xml[DOCUMENT] ?: throw DocxException("This isn't a Word document (word/document.xml is missing).")
-        val styles = parts.xml[STYLES]?.let { Styles.parse(it) } ?: Styles(emptyMap(), present = false)
+        val theme = parts.xml[THEME]?.let { Theme.parse(it) } ?: Theme(null, null)
+        val styles = parts.xml[STYLES]?.let { Styles.parse(it, theme) } ?: Styles(emptyMap(), present = false, theme = theme)
         val numbering = parts.xml[NUMBERING]?.let { Numbering.parse(it) } ?: Numbering(emptyMap(), emptyMap())
         val rels = parts.xml[RELS]?.let { parseRels(it) } ?: emptyMap()
         val doc = dom(documentXml)
@@ -75,7 +78,7 @@ object DocxParser {
     private class Parts(val xml: Map<String, String>, val media: Map<String, ByteArray>)
 
     private fun readParts(input: InputStream, limits: DocxLimits): Parts {
-        val wanted = setOf(DOCUMENT, STYLES, NUMBERING, RELS)
+        val wanted = setOf(DOCUMENT, STYLES, NUMBERING, RELS, THEME)
         try {
             val parts = OoxmlZip.read(
                 input,
@@ -132,16 +135,37 @@ object DocxParser {
         val props: StyleProps = StyleProps(), val isDefaultParagraph: Boolean = false,
     )
 
+    /** The theme's heading ("major") and body ("minor") fonts, which runs name as "majorHAnsi", "minorAscii" and so on. */
+    internal class Theme(val major: String?, val minor: String?) {
+        fun byName(themeName: String?): String? = when {
+            themeName == null -> null
+            themeName.startsWith("major") -> major
+            themeName.startsWith("minor") -> minor
+            else -> null
+        }
+
+        companion object {
+            fun parse(xml: String): Theme {
+                val root = dom(xml).documentElement
+                fun latin(tag: String): String? {
+                    val node = root.getElementsByTagNameNS(DML, tag).item(0) as? Element ?: return null
+                    return node.getElementsByTagNameNS(DML, "latin").item(0)?.let { (it as Element).getAttribute("typeface") }?.takeIf { it.isNotBlank() }
+                }
+                return Theme(latin("majorFont"), latin("minorFont"))
+            }
+        }
+    }
+
     /** The shape settings one place (the defaults, a style, or a paragraph) gives; null means "not said here". */
     internal data class StyleProps(
         val before: Float? = null, val after: Float? = null, val line: LineSpacing? = null,
         val left: Float? = null, val right: Float? = null, val firstLine: Float? = null,
-        val sizeHalfPoints: Int? = null, val contextual: Boolean? = null,
+        val sizeHalfPoints: Int? = null, val contextual: Boolean? = null, val font: String? = null,
     ) {
         /** These settings on top of [base]: what this says wins, the rest comes from [base]. */
         fun over(base: StyleProps) = StyleProps(
             before ?: base.before, after ?: base.after, line ?: base.line, left ?: base.left, right ?: base.right,
-            firstLine ?: base.firstLine, sizeHalfPoints ?: base.sizeHalfPoints, contextual ?: base.contextual,
+            firstLine ?: base.firstLine, sizeHalfPoints ?: base.sizeHalfPoints, contextual ?: base.contextual, font ?: base.font,
         )
     }
 
@@ -150,7 +174,16 @@ object DocxParser {
         private val docDefaults: StyleProps = StyleProps(),
         /** False when the file has no styles part: then no paragraph layout is given (the app's own spacing is used). */
         val present: Boolean = true,
+        val theme: Theme = Theme(null, null),
     ) {
+        /** The font name an `rFonts` element asks for: its own name, else the theme font it points to, else null. */
+        fun fontOf(rFonts: Element?): String? {
+            if (rFonts == null) return null
+            val named = rFonts.wAttr("ascii") ?: rFonts.wAttr("hAnsi")
+            if (named != null) return named
+            return theme.byName(rFonts.wAttr("asciiTheme") ?: rFonts.wAttr("hAnsiTheme"))
+        }
+
         private val defaultParagraphId: String? = byId.values.firstOrNull { it.isDefaultParagraph }?.id
 
         /** The layout of a paragraph: the defaults, then its style and the styles it is based on, then its own [direct] settings. */
@@ -163,6 +196,7 @@ object DocxParser {
                 spaceBeforePt = p.before ?: 0f, spaceAfterPt = p.after ?: 0f, line = p.line ?: LineSpacing.Multiple(1f),
                 leftPt = p.left ?: 0f, rightPt = p.right ?: 0f, firstLinePt = p.firstLine ?: 0f,
                 sizeHalfPoints = p.sizeHalfPoints, styleId = styleId ?: defaultParagraphId, contextual = p.contextual ?: false,
+                fontName = p.font,
             )
         }
 
@@ -191,9 +225,10 @@ object DocxParser {
         }
 
         companion object {
-            fun parse(xml: String): Styles {
+            fun parse(xml: String, theme: Theme = Theme(null, null)): Styles {
                 val map = HashMap<String, StyleInfo>()
                 val root = dom(xml).documentElement
+                val reader = Styles(emptyMap(), theme = theme) // only to read fonts through the theme
                 for (style in root.children("style")) {
                     val id = style.wAttr("styleId") ?: continue
                     val numPr = style.child("pPr")?.child("numPr")
@@ -203,19 +238,19 @@ object DocxParser {
                         basedOn = style.valOf("basedOn"),
                         numId = numPr?.valOf("numId"),
                         ilvl = numPr?.valOf("ilvl")?.toIntOrNull(),
-                        props = readProps(style.child("pPr"), style.child("rPr")),
+                        props = readProps(style.child("pPr"), style.child("rPr"), reader),
                         isDefaultParagraph = style.wAttr("type") == "paragraph" && style.wAttr("default").let { it == "1" || it == "true" },
                     )
                 }
                 val defaults = root.child("docDefaults")
-                val base = readProps(defaults?.child("pPrDefault")?.child("pPr"), defaults?.child("rPrDefault")?.child("rPr"))
-                return Styles(map, base)
+                val base = readProps(defaults?.child("pPrDefault")?.child("pPr"), defaults?.child("rPrDefault")?.child("rPr"), reader)
+                return Styles(map, base, theme = theme)
             }
 
             private fun twipsToPt(v: String?): Float? = v?.toIntOrNull()?.let { it.coerceIn(-31680, 31680) / 20f }
 
             /** Spacing, line spacing, indents, text size and "contextual spacing" from a paragraph's (or style's) `pPr` and `rPr`. */
-            fun readProps(pPr: Element?, rPr: Element?): StyleProps {
+            fun readProps(pPr: Element?, rPr: Element?, fonts: Styles? = null): StyleProps {
                 val spacing = pPr?.child("spacing")
                 val ind = pPr?.child("ind")
                 var line: LineSpacing? = null
@@ -238,6 +273,7 @@ object DocxParser {
                     firstLine = if (hanging != null && hanging > 0f) -hanging else twipsToPt(ind?.wAttr("firstLine")),
                     sizeHalfPoints = rPr?.valOf("sz")?.toIntOrNull()?.takeIf { it in 2..400 },
                     contextual = pPr?.child("contextualSpacing")?.let { it.isOn() },
+                    font = fonts?.fontOf(rPr?.child("rFonts")),
                 )
             }
         }
@@ -483,6 +519,7 @@ object DocxParser {
                     strike = rPr?.child("strike").isOn(),
                     sizeHalfPoints = size?.takeIf { it in 2..400 },
                     colorHex = color?.takeIf { it != "AUTO" },
+                    fontName = styles.fontOf(rPr?.child("rFonts")),
                 )
             }
         }

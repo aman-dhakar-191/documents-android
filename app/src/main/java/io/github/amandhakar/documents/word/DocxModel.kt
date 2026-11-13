@@ -10,6 +10,8 @@ data class DocxRun(
     val sizeHalfPoints: Int? = null,
     /** Six hex digits, e.g. "FF0000", or null for the default colour. */
     val colorHex: String? = null,
+    /** The font this run names for itself (a theme font already resolved to its name), or null to use the paragraph's. */
+    val fontName: String? = null,
 )
 
 /** How tall a line is: a multiple of the text's natural height (1 = single), at least so many points, or exactly so many. */
@@ -34,6 +36,8 @@ data class ParagraphLayout(
     val sizeHalfPoints: Int? = null,
     val styleId: String? = null,
     val contextual: Boolean = false,
+    /** The font the style or the document defaults give the text (a theme font resolved to its name), or null. */
+    val fontName: String? = null,
 )
 
 enum class DocxAlign { Start, Center, End, Justify }

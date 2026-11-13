@@ -165,7 +165,10 @@ private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
             ),
     ) {
         if (p.list != null) {
-            Text(p.list.label, color = PageInk, fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)), modifier = Modifier.width(scale.dp(PageLayout.LIST_INDENT)))
+            Text(
+                p.list.label, color = PageInk, fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)),
+                fontFamily = WordFontFamilies.of(PageLayout.faceOf(p)), modifier = Modifier.width(scale.dp(PageLayout.LIST_INDENT)),
+            )
         }
         val body: @Composable () -> Unit = {
             Text(
@@ -173,6 +176,7 @@ private fun PageParagraph(p: DocxParagraph, scale: PageScale) {
                 color = PageInk,
                 style = TextStyle(
                     fontSize = scale.sp(font), lineHeight = scale.sp(PageLayout.lineHeightPt(p)), textAlign = align,
+                    fontFamily = WordFontFamilies.of(PageLayout.faceOf(p)),
                     textIndent = PageLayout.firstLineIndent(p).takeIf { it != 0f }?.let { TextIndent(firstLine = scale.sp(it), restLine = 0.sp) },
                 ),
                 modifier = Modifier.fillMaxWidth().editable(p, onEdit),
@@ -199,6 +203,7 @@ private fun styled(p: DocxParagraph, scale: PageScale): AnnotatedString = buildA
                 textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
                 fontSize = scale.sp(size),
                 color = color,
+                fontFamily = WordFontFamilies.forName(run.fontName ?: p.layout?.fontName),
             ),
         ) { append(run.text) }
     }
