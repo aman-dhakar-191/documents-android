@@ -18,7 +18,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Change the text of a paragraph: a box with its text, and Apply. For Word there are also Delete (the paragraph goes) and
- * Add below (a new paragraph after it); for PowerPoint, clearing the text and applying leaves the paragraph empty.
+ * Add below (a new paragraph after it); for PowerPoint, clearing the text and applying leaves the paragraph empty. Also
+ * used for an Excel cell, with its own [label] and a [note] under the box.
  */
 @Composable
 fun EditTextDialog(
@@ -28,6 +29,9 @@ fun EditTextDialog(
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)? = null,
     onAddBelow: ((String) -> Unit)? = null,
+    label: String = "Paragraph",
+    minLines: Int = 3,
+    note: String? = null,
 ) {
     var text by remember { mutableStateOf(initial) }
     var adding by remember { mutableStateOf(false) }
@@ -38,9 +42,10 @@ fun EditTextDialog(
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                minLines = 3,
+                minLines = minLines,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text(if (adding) "Text" else "Paragraph") },
+                label = { Text(if (adding) "Text" else label) },
+                supportingText = note?.let { { Text(it) } },
             )
         },
         confirmButton = {

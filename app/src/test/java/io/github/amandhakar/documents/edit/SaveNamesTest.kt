@@ -60,4 +60,13 @@ class SaveNamesTest {
         assertTrue(detail.length < 150)
         assertTrue(!detail.contains('\n'))
 }
+
+    @Test fun editedCopiesKeepTheirKind() {
+        assertEquals("Budget (edited).xlsx", SaveNames.editedName("Budget.xlsx", ".xlsx"))
+        assertEquals("config (edited).yaml", SaveNames.editedName("folder/config.yaml", ".txt"))
+        assertEquals("notes (edited).txt", SaveNames.editedName("notes", ".txt"))
+        assertEquals(".env (edited).txt", SaveNames.editedName(".env", ".txt"))
+        assertEquals("document (edited).xlsx", SaveNames.editedName(null, ".xlsx"))
+        assertEquals("a (edited).txt", SaveNames.editedName("a\u0000.txt", ".csv"))
+    }
 }

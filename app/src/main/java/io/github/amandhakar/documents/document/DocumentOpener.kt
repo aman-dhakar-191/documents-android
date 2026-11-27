@@ -20,7 +20,7 @@ object DocumentOpener {
             DocumentFormat.Html -> throw UnsupportedFormatException("text/html")
             DocumentFormat.Docx -> throw UnsupportedFormatException(DocumentFormat.DOCX_MIME)
             DocumentFormat.Pptx -> throw UnsupportedFormatException(DocumentFormat.PPTX_MIME)
-            DocumentFormat.Markdown, DocumentFormat.Text -> throw UnsupportedFormatException(format.mimeType)
+            DocumentFormat.Markdown, DocumentFormat.Text, DocumentFormat.Xlsx -> throw UnsupportedFormatException(format.mimeType)
         }
     }
 
@@ -32,6 +32,10 @@ object DocumentOpener {
             // Plain text of any name (a README with no ending) is shown as text.
             ?: if (mime?.substringBefore(';')?.trim()?.lowercase() == "text/plain") DocumentFormat.Text else null
     }
+
+    /** What kind of text a [DocumentFormat.Text] file holds (JSON, YAML, CSV...), from its name and MIME type. Blocking. */
+    fun textSyntaxOf(context: Context, uri: Uri): TextSyntax =
+        TextSyntax.of(displayName(context, uri) ?: uri.lastPathSegment, context.contentResolver.getType(uri))
 
     private fun openPdf(context: Context, uri: Uri): Document {
         val direct = context.contentResolver.openFileDescriptor(uri, "r")

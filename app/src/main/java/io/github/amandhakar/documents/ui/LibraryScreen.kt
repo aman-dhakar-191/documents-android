@@ -294,7 +294,9 @@ private fun Thumbnail(file: PdfFile, modifier: Modifier) {
         val (icon, label) = when (file.format) {
             DocumentFormat.Docx -> DocIcons.Description to "Word"
             DocumentFormat.Pptx -> DocIcons.Slideshow to "PowerPoint"
-            DocumentFormat.Markdown, DocumentFormat.Text -> DocIcons.Notes to "Markdown"
+            DocumentFormat.Xlsx -> DocIcons.TableChart to "Excel"
+            DocumentFormat.Markdown -> DocIcons.Notes to "Markdown"
+            DocumentFormat.Text -> DocIcons.Notes to "Text"
             else -> DocIcons.Public to "Web page"
         }
         Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {

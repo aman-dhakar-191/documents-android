@@ -7,6 +7,11 @@ import androidx.lifecycle.viewModelScope
 import io.github.amandhakar.documents.document.Document
 import io.github.amandhakar.documents.document.DocumentFormat
 import io.github.amandhakar.documents.document.TextFiles
+import io.github.amandhakar.documents.document.TextLayout
+import io.github.amandhakar.documents.document.TextSyntax
+import io.github.amandhakar.documents.sheets.CsvTable
+import io.github.amandhakar.documents.sheets.Workbook
+import io.github.amandhakar.documents.sheets.XlsxParser
 import io.github.amandhakar.documents.markdown.MarkdownParser
 import io.github.amandhakar.documents.document.DocumentOpener
 import io.github.amandhakar.documents.document.UnsupportedFormatException
@@ -42,10 +47,24 @@ sealed interface ViewerState {
     data class Pptx(val uri: Uri, val deck: PptxDeck) : ViewerState
 
     /**
-     * A Markdown or plain text file, already read. [document] is the Markdown turned into the Word model (null for plain
-     * text, which only has its [source]). [truncated] is true when the file was longer than the app reads.
+     * A Markdown or text file (JSON, YAML, XML, CSV, logs...), already read. [document] is the Markdown turned into the Word
+     * model (null for other text, which only has its [source]). [truncated] is true when the file was longer than the app
+     * reads. [syntax] is the kind of text; [table] the cells of a CSV / TSV file. [layout] is how the file was written, so
+     * an edit can be saved the same way; [editBlock] says why the file can't be edited, when it can't.
      */
-    data class Text(val uri: Uri, val source: String, val document: DocxDocument?, val truncated: Boolean) : ViewerState
+    data class Text(
+        val uri: Uri,
+        val source: String,
+        val document: DocxDocument?,
+        val truncated: Boolean,
+        val syntax: TextSyntax = TextSyntax.Plain,
+        val table: Workbook? = null,
+        val layout: TextLayout? = null,
+        val editBlock: String? = null,
+    ) : ViewerState
+
+    /** An Excel workbook (.xlsx), already read, shown as a grid with a tab per sheet. */
+    data class Sheet(val uri: Uri, val workbook: Workbook) : ViewerState
 }
 
 class DocumentViewModel(app: Application) : AndroidViewModel(app) {
@@ -89,10 +108,42 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                         val bytes = getApplication<Application>().contentResolver.openInputStream(uri)?.use { TextFiles.readLimited(it) }
                             ?: throw IOException("Could not read $uri")
                         val source = TextFiles.decode(bytes.first)
-                        ViewerState.Text(uri, source, if (format == DocumentFormat.Markdown) MarkdownParser.parse(source) else null, bytes.second)
+                        val syntax = if (format == DocumentFormat.Markdown) TextSyntax.Plain else DocumentOpener.textSyntaxOf(getApplication(), uri)
+                        val layout = if (bytes.second) null else TextFiles.layoutOf(bytes.first)
+                        val editBlock = when {
+                            bytes.second -> "This file is too long to edit here (over 4 MB)."
+                            layout == null -> "This file isn't plain UTF-8 text (or mixes line endings), so editing it here could change it. It can only be read."
+                            source.length > TextFiles.MAX_EDIT_CHARS -> "This file is too long to edit on a phone (over 512 KB)."
+                            else -> null
+                        }
+                        ViewerState.Text(
+                            uri,
+                            source,
+                            if (format == DocumentFormat.Markdown) MarkdownParser.parse(source) else null,
+                            bytes.second,
+                            syntax,
+                            if (syntax.isTable) CsvTable.parse(source, syntax.delimiter) else null,
+                            layout,
+                            editBlock,
+                        )
                     }
                 }
                 if (isActive) _state.value = read.fold(onSuccess = { it }, onFailure = { ViewerState.Error(messageFor(it)) })
+                return@launch
+            }
+            if (format == DocumentFormat.Xlsx) {
+                val read = withContext(Dispatchers.IO) {
+                    runCatching {
+                        getApplication<Application>().contentResolver.openInputStream(uri)?.use { XlsxParser.parse(it) }
+                            ?: throw IOException("Could not read $uri")
+                    }
+                }
+                if (isActive) {
+                    _state.value = read.fold(
+                        onSuccess = { ViewerState.Sheet(uri, it) },
+                        onFailure = { ViewerState.Error(messageFor(it)) },
+                    )
+                }
                 return@launch
             }
             if (format == DocumentFormat.Pptx) {
@@ -164,7 +215,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         is DocxException -> error.message ?: "This Word file couldn't be opened."
         is OoxmlException -> error.message ?: "This file couldn't be opened."
         is OutOfMemoryError -> "This document is too big to open on this phone."
-        is UnsupportedFormatException -> "This file type isn't supported yet. Only PDF files, Word (.docx), PowerPoint (.pptx), Markdown (.md) and text files and web pages (.html) can be opened."
+        is UnsupportedFormatException -> "This file type isn't supported yet. PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), Markdown, web pages (.html) and text files (.txt, .json, .yaml, .xml, .csv, .toml, .ini, .log) can be opened. Old Excel (.xls), Word (.doc) and PowerPoint (.ppt) files can't."
         is SecurityException -> "Couldn't open this file. It may be password-protected, which isn't supported yet."
         is IOException -> "Couldn't open this file. It may be damaged or not a valid PDF."
         else -> "Something went wrong opening this file."
