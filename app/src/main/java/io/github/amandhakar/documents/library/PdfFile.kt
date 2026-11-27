@@ -62,14 +62,21 @@ object PdfFiles {
 
     /**
      * True when [path] is in (or under) the top-level Download or Documents folder of the phone's storage or an SD card,
-     * e.g. "/storage/emulated/0/Download/a.json". False for app folders (Android/data, an app's own folder) and unknown paths.
+     * e.g. "/storage/emulated/0/Download/a.json", or in WhatsApp's or WhatsApp Business's received documents folder (new
+     * place under Android/media, or the old one at the top level). False for other app folders (Android/data, an app's own
+     * folder) and unknown paths.
      */
     fun inUserFolder(path: String?): Boolean {
         if (path.isNullOrBlank() || "/../" in path) return false
         return USER_FOLDER.containsMatchIn(path)
     }
 
-    private val USER_FOLDER = Regex("^(?:/storage/(?:emulated/\\d+|[^/]+)|/sdcard)/(?:Download|Documents)/[^/]", RegexOption.IGNORE_CASE)
+    private val USER_FOLDER = Regex(
+        "^(?:/storage/(?:emulated/\\d+|[^/]+)|/sdcard)/" +
+            "(?:Download|Documents|(?:Android/media/com\\.whatsapp(?:\\.w4b)?/)?WhatsApp(?: Business)?/Media/WhatsApp(?: Business)? Documents)" +
+            "/[^/]",
+        RegexOption.IGNORE_CASE,
+    )
 
     /** Newest first; ties by name (ignoring case), then id, so the order is stable. */
     fun sortedNewestFirst(files: List<PdfFile>): List<PdfFile> = files.sortedWith(

@@ -87,6 +87,23 @@ class PdfFilesTest {
         assertTrue(PdfFiles.inUserFolder("/sdcard/Documents/a.txt"))
     }
 
+    @Test fun whatsAppDocumentsAreUserFolders() {
+        assertTrue(PdfFiles.inUserFolder("/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/a.json"))
+        assertTrue(PdfFiles.inUserFolder("/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/Sent/a.csv"))
+        assertTrue(
+            PdfFiles.inUserFolder("/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Documents/a.xml"),
+        )
+        assertTrue(PdfFiles.inUserFolder("/storage/emulated/0/WhatsApp/Media/WhatsApp Documents/a.yaml")) // older phones
+        assertTrue(PdfFiles.inUserFolder("/storage/emulated/0/WhatsApp Business/Media/WhatsApp Business Documents/a.txt"))
+    }
+
+    @Test fun otherWhatsAppFoldersAreNotUserFolders() {
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Databases/msgstore.json"))
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/.Statuses/a.json"))
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Android/media/com.other/WhatsApp/Media/WhatsApp Documents/a.json"))
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Android/data/com.whatsapp/files/a.json"))
+    }
+
     @Test fun appAndOtherFoldersAreNotUserFolders() {
         assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Android/data/com.app/files/Download/a.json"))
         assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/WhatsApp/Media/a.json"))
