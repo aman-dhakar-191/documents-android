@@ -109,7 +109,7 @@ fun LibraryScreen(
         }
         LibraryState.NeedsPermission -> Message(
             "To show your files here, Documents needs permission to see the files on your phone. " +
-                "It only looks for PDF, Word, PowerPoint, Excel, Markdown and web page files, and text files in Download and Documents, and nothing leaves your phone. " +
+                "It only looks for PDF, Word, PowerPoint, Excel, Markdown and web page files, and text files in Download, Documents and WhatsApp Documents, and nothing leaves your phone. " +
                 "You can still open a single file with Browse without giving this permission.",
         ) {
             Button(onClick = {
