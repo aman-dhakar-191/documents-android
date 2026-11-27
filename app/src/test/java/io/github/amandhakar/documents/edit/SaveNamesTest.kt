@@ -69,4 +69,12 @@ class SaveNamesTest {
         assertEquals("document (edited).xlsx", SaveNames.editedName(null, ".xlsx"))
         assertEquals("a (edited).txt", SaveNames.editedName("a\u0000.txt", ".csv"))
     }
+
+    @Test fun wordAndPowerPointCopiesAreNeverNamedLikeASignedPdf() {
+        assertEquals("report (edited).docx", SaveNames.editedName("report.docx", ".docx", keepExtension = false))
+        assertEquals("Deck (edited).pptx", SaveNames.editedName("Deck.PPTX", ".pptx", keepExtension = false))
+        assertEquals("notes (edited).docx", SaveNames.editedName("notes", ".docx", keepExtension = false))
+        assertEquals("document (edited).pptx", SaveNames.editedName(null, ".pptx", keepExtension = false))
+        assertEquals("scan.final (edited).docx", SaveNames.editedName("scan.final.bin", ".docx", keepExtension = false))
+    }
 }

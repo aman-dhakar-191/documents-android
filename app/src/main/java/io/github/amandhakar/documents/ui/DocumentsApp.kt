@@ -515,10 +515,10 @@ fun DocumentsApp(
                     askOfficeSave = false
                     val name = displayNameOf(context, viewModel.openUri())
                     when (state) {
-                        is ViewerState.Pptx -> savePptxCopy.launch(SaveNames.signedName(name))
+                        is ViewerState.Pptx -> savePptxCopy.launch(SaveNames.editedName(name, ".pptx", keepExtension = false))
                         is ViewerState.Sheet -> saveSheetCopy.launch(SaveNames.editedName(name, ".xlsx"))
                         is ViewerState.Text -> saveTextCopy.launch(SaveNames.editedName(name, ".txt"))
-                        else -> saveWordCopy.launch(SaveNames.signedName(name))
+                        else -> saveWordCopy.launch(SaveNames.editedName(name, ".docx", keepExtension = false))
                     }
                 },
                 onReplace = {
