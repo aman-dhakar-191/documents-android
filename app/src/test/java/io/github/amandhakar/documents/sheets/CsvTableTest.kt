@@ -34,7 +34,7 @@ class CsvTableTest {
     }
 
     @Test fun noFinalNewlineAndByteOrderMark() {
-        val s = sheet("﻿x,y")
+        val s = sheet("\uFEFFx,y")
         assertEquals("x", s.cell(0, 0)!!.text)
         assertEquals("y", s.cell(0, 1)!!.text)
     }

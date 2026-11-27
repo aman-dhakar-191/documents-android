@@ -130,7 +130,7 @@ object XlsxEditor {
 
     // ---- the XML ----
 
-    private fun read(bytes: ByteArray): Document = parseXml(String(bytes, Charsets.UTF_8).removePrefix("﻿"))
+    private fun read(bytes: ByteArray): Document = parseXml(String(bytes, Charsets.UTF_8).removePrefix("\uFEFF"))
 
     private fun write(doc: Document): ByteArray {
         val out = ByteArrayOutputStream()

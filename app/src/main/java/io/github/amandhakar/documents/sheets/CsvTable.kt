@@ -35,7 +35,7 @@ object CsvTable {
             col++
         }
 
-        val s = text.removePrefix("﻿")
+        val s = text.removePrefix("\uFEFF")
         while (i < s.length) {
             if (cells.size >= limits.maxCells || row >= CellRefs.MAX_ROWS) {
                 truncated = true
