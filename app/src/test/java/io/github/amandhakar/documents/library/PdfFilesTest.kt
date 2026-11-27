@@ -1,6 +1,8 @@
 package io.github.amandhakar.documents.library
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.ZoneOffset
 import java.util.Locale
@@ -75,6 +77,27 @@ class PdfFilesTest {
     @Test fun parentFolderName() {
         assertEquals("Download", PdfFiles.parentFolderName("/storage/emulated/0/Download/a.pdf"))
         assertEquals("Work", PdfFiles.parentFolderName("/storage/emulated/0/Documents/Work/a.pdf"))
+    }
+
+    @Test fun downloadAndDocumentsAreUserFolders() {
+        assertTrue(PdfFiles.inUserFolder("/storage/emulated/0/Download/config.json"))
+        assertTrue(PdfFiles.inUserFolder("/storage/emulated/0/Documents/Work/data.yaml"))
+        assertTrue(PdfFiles.inUserFolder("/storage/emulated/10/download/a.csv")) // another user, any case
+        assertTrue(PdfFiles.inUserFolder("/storage/1A2B-3C4D/Download/a.xml")) // SD card
+        assertTrue(PdfFiles.inUserFolder("/sdcard/Documents/a.txt"))
+    }
+
+    @Test fun appAndOtherFoldersAreNotUserFolders() {
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Android/data/com.app/files/Download/a.json"))
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/WhatsApp/Media/a.json"))
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/com.app/Documents/a.json")) // not top level
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Downloads/a.json"))
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Download")) // the folder itself
+        assertFalse(PdfFiles.inUserFolder("/storage/emulated/0/Download/../Android/data/a.json"))
+        assertFalse(PdfFiles.inUserFolder("/data/data/com.app/Download/a.json"))
+        assertFalse(PdfFiles.inUserFolder("Download/a.json"))
+        assertFalse(PdfFiles.inUserFolder(""))
+        assertFalse(PdfFiles.inUserFolder(null))
     }
 
     @Test fun parentFolderNameWhenThereIsNone() {

@@ -10,7 +10,8 @@ enum class LibraryFilter(val label: String) {
     Word("Word"),
     Slides("PowerPoint"),
     Excel("Excel"),
-    Markdown("Markdown");
+    Markdown("Markdown"),
+    Text("Text");
 
     fun matches(format: DocumentFormat): Boolean = when (this) {
         All -> true
@@ -20,6 +21,7 @@ enum class LibraryFilter(val label: String) {
         Slides -> format == DocumentFormat.Pptx
         Excel -> format == DocumentFormat.Xlsx
         Markdown -> format == DocumentFormat.Markdown
+        Text -> format == DocumentFormat.Text
     }
 }
 

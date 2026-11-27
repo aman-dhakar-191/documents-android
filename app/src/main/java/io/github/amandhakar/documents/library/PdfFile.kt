@@ -60,6 +60,17 @@ object PdfFiles {
         return path.substringBeforeLast('/', "").substringAfterLast('/')
     }
 
+    /**
+     * True when [path] is in (or under) the top-level Download or Documents folder of the phone's storage or an SD card,
+     * e.g. "/storage/emulated/0/Download/a.json". False for app folders (Android/data, an app's own folder) and unknown paths.
+     */
+    fun inUserFolder(path: String?): Boolean {
+        if (path.isNullOrBlank() || "/../" in path) return false
+        return USER_FOLDER.containsMatchIn(path)
+    }
+
+    private val USER_FOLDER = Regex("^(?:/storage/(?:emulated/\\d+|[^/]+)|/sdcard)/(?:Download|Documents)/[^/]", RegexOption.IGNORE_CASE)
+
     /** Newest first; ties by name (ignoring case), then id, so the order is stable. */
     fun sortedNewestFirst(files: List<PdfFile>): List<PdfFile> = files.sortedWith(
         compareByDescending<PdfFile> { it.modifiedSeconds }

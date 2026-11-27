@@ -63,6 +63,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.amandhakar.documents.LibraryState
 import io.github.amandhakar.documents.LibraryViewModel
 import io.github.amandhakar.documents.document.DocumentFormat
+import io.github.amandhakar.documents.document.TextSyntax
 import io.github.amandhakar.documents.library.LibraryFilter
 import io.github.amandhakar.documents.library.LibraryFilters
 import io.github.amandhakar.documents.defaultapp.DefaultKind
@@ -108,7 +109,7 @@ fun LibraryScreen(
         }
         LibraryState.NeedsPermission -> Message(
             "To show your files here, Documents needs permission to see the files on your phone. " +
-                "It only looks for PDF, Word, PowerPoint, Markdown and web page files, and nothing leaves your phone. " +
+                "It only looks for PDF, Word, PowerPoint, Excel, Markdown and web page files, and text files in Download and Documents, and nothing leaves your phone. " +
                 "You can still open a single file with Browse without giving this permission.",
         ) {
             Button(onClick = {
@@ -296,7 +297,7 @@ private fun Thumbnail(file: PdfFile, modifier: Modifier) {
             DocumentFormat.Pptx -> DocIcons.Slideshow to "PowerPoint"
             DocumentFormat.Xlsx -> DocIcons.TableChart to "Excel"
             DocumentFormat.Markdown -> DocIcons.Notes to "Markdown"
-            DocumentFormat.Text -> DocIcons.Notes to "Text"
+            DocumentFormat.Text -> DocIcons.Notes to (TextSyntax.fromFileName(file.name)?.label ?: "Text")
             else -> DocIcons.Public to "Web page"
         }
         Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
