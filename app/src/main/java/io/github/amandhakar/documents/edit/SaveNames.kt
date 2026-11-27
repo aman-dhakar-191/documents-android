@@ -15,12 +15,15 @@ object SaveNames {
         return (if (base.isEmpty()) "document" else base) + "-signed.pdf"
     }
 
-    /** A name for an edited copy of a file that isn't a PDF: "Budget.xlsx" -> "Budget (edited).xlsx". [extension] is used when the name has none. */
-    fun editedName(original: String?, extension: String): String {
+    /**
+     * A name for an edited copy of a file that isn't a PDF: "Budget.xlsx" -> "Budget (edited).xlsx". [extension] is used
+     * when the name has none, or always when [keepExtension] is false (Word and PowerPoint copies are always .docx / .pptx).
+     */
+    fun editedName(original: String?, extension: String, keepExtension: Boolean = true): String {
         val name = original.orEmpty().substringAfterLast('/').substringAfterLast('\\').filter { !it.isISOControl() }.trim()
         val dot = name.lastIndexOf('.')
         val base = (if (dot > 0) name.substring(0, dot) else name).trim().ifEmpty { "document" }
-        val ext = if (dot > 0 && dot < name.length - 1) name.substring(dot) else extension
+        val ext = if (keepExtension && dot > 0 && dot < name.length - 1) name.substring(dot) else extension
         return "$base (edited)$ext"
     }
 
