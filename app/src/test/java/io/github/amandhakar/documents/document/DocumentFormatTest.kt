@@ -18,7 +18,6 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromMimeType("application/octet-stream"))
         assertNull(DocumentFormat.fromMimeType("application/msword"))
         assertNull(DocumentFormat.fromMimeType("application/vnd.ms-powerpoint"))
-        assertNull(DocumentFormat.fromMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         assertNull(DocumentFormat.fromMimeType("application/pdfx"))
     }
 
@@ -34,7 +33,7 @@ class DocumentFormatTest {
         assertNull(DocumentFormat.fromFileName("pdf"))
         assertNull(DocumentFormat.fromFileName("notes.doc"))
         assertNull(DocumentFormat.fromFileName("slides.ppt"))
-        assertNull(DocumentFormat.fromFileName("sheet.xlsx"))
+        assertNull(DocumentFormat.fromFileName("sheet.xls"))
         assertNull(DocumentFormat.fromFileName("report.pdf.exe"))
     }
 

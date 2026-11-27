@@ -96,6 +96,7 @@ private-app-store as a signed APK on GitHub Releases. No Play Store.
 | 4 | Web pages (.html / .htm / .xhtml): safe offline viewer (done), library cards, save as PDF (not started) | Viewer implemented, not device-tested; the rest per [ROADMAP.md](ROADMAP.md) |
 | 5 | PowerPoint (.pptx) viewing, then editing | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
 | 6 | Word (.docx) viewing, then editing | Planned in [ROADMAP.md](ROADMAP.md), needs an explicit go-ahead |
+| 7 | Other text files (JSON, YAML, XML, CSV / TSV, TOML, INI, logs: coloured viewer, CSV as a table, text editor with JSON / XML checks) and Excel (.xlsx: sheet grid, cell editing), both with the app's own code (no new library); old .xls left out (would need Apache POI) | Implemented on the owner's go-ahead, not device-tested |
 
 "Docs" is assumed to mean Word-style `.doc` / `.docx`. Google Docs would be a separate
 integration (Google sign-in and APIs) and is not planned.

@@ -38,4 +38,44 @@ object TextFiles {
         val text = String(bytes, Charsets.UTF_8).removePrefix("\uFEFF")
         return text.trimEnd('�').let { if (text.endsWith('�') && bytes.size == MAX_BYTES) it else text }
     }
+
+    /** The most text the editor takes: a phone's text box gets slow well before the 4 MB the viewer reads. */
+    const val MAX_EDIT_CHARS = 512 * 1024
+
+    /**
+     * How [bytes] were written, so an edited text can be saved the same way: its encoding and whether lines end in CR LF.
+     * Null when saving could change bytes the person never touched: the file isn't valid UTF-8 / UTF-16 (for example an
+     * old one-byte encoding, or a binary file).
+     */
+    fun layoutOf(bytes: ByteArray): TextLayout? {
+        val encoding = when {
+            bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> TextEncoding.Utf16Le
+            bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> TextEncoding.Utf16Be
+            bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> TextEncoding.Utf8Bom
+            else -> TextEncoding.Utf8
+        }
+        val text = decode(bytes)
+        val layout = TextLayout(encoding, crlf = text.contains("\r\n"))
+        // Only when writing the text back gives exactly the same bytes is it safe to edit.
+        return if (encode(normalize(text), layout).contentEquals(bytes)) layout else null
+    }
+
+    /** The text as the editor holds it: every line ending as a single LF. */
+    fun normalize(text: String): String = text.replace("\r\n", "\n")
+
+    /** [text] (with LF line endings) as bytes in [layout]: the same encoding and line endings as the file it came from. */
+    fun encode(text: String, layout: TextLayout): ByteArray {
+        val body = if (layout.crlf) normalize(text).replace("\n", "\r\n") else text
+        return when (layout.encoding) {
+            TextEncoding.Utf8 -> body.toByteArray(Charsets.UTF_8)
+            TextEncoding.Utf8Bom -> byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + body.toByteArray(Charsets.UTF_8)
+            TextEncoding.Utf16Le -> byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + body.toByteArray(Charsets.UTF_16LE)
+            TextEncoding.Utf16Be -> byteArrayOf(0xFE.toByte(), 0xFF.toByte()) + body.toByteArray(Charsets.UTF_16BE)
+        }
+    }
 }
+
+enum class TextEncoding { Utf8, Utf8Bom, Utf16Le, Utf16Be }
+
+/** How a text file was written: [encoding], and [crlf] when its lines end in CR LF (Windows) rather than LF. */
+data class TextLayout(val encoding: TextEncoding, val crlf: Boolean)

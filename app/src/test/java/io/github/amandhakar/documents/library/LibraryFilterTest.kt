@@ -24,6 +24,12 @@ class LibraryFilterTest {
 
     @Test fun slidesShowsOnlyPresentations() = assertEquals(listOf(5L), LibraryFilters.apply(files, LibraryFilter.Slides).map { it.id })
 
+    @Test fun excelShowsOnlyWorkbooks() {
+        val withSheet = files + file(6, DocumentFormat.Xlsx)
+        assertEquals(listOf(6L), LibraryFilters.apply(withSheet, LibraryFilter.Excel).map { it.id })
+        assertEquals(0, LibraryFilters.counts(files)[LibraryFilter.Excel])
+    }
+
     @Test fun webShowsOnlyWebPages() = assertEquals(listOf(2L), LibraryFilters.apply(files, LibraryFilter.Web).map { it.id })
 
     @Test fun anEmptyListStaysEmpty() = assertEquals(emptyList<PdfFile>(), LibraryFilters.apply(emptyList(), LibraryFilter.Pdf))

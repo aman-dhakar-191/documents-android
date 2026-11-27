@@ -97,6 +97,14 @@ import io.github.amandhakar.documents.web.WebDocumentScreen
 import io.github.amandhakar.documents.document.DocumentFormat
 import io.github.amandhakar.documents.library.PdfFiles
 import io.github.amandhakar.documents.share.ShareFiles
+import io.github.amandhakar.documents.document.TextSyntax
+import io.github.amandhakar.documents.sheets.CellRefs
+import io.github.amandhakar.documents.sheets.CellKind
+import io.github.amandhakar.documents.sheets.SheetData
+import io.github.amandhakar.documents.sheets.XlsxEditModel
+import io.github.amandhakar.documents.text.Json
+import io.github.amandhakar.documents.text.JsonException
+import io.github.amandhakar.documents.text.TextChecks
 import kotlin.math.roundToInt
 
 /** A PDF another app asked us to open. [serial] makes a repeat request for the same file count as new. */
@@ -138,6 +146,13 @@ fun DocumentsApp(
     // A Markdown file: rendered (the default) or its source.
     var showSource by rememberSaveable { mutableStateOf(false) }
     var askOfficeDiscard by rememberSaveable { mutableStateOf(false) }
+    // CSV / TSV: shown as a table (the default) or as text. Excel: which sheet is open and which cell was tapped.
+    var showTable by rememberSaveable { mutableStateOf(true) }
+    var sheetIndex by rememberSaveable { mutableStateOf(0) }
+    var selectedCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var editingCell by remember { mutableStateOf<Triple<SheetData, Int, Int>?>(null) }
+    // A text file that fails its check (broken JSON, say) when saving: the problem, shown before saving anyway.
+    var textProblem by remember { mutableStateOf<String?>(null) }
     // Scripts in a web page are off until the person turns them on (per opening).
     var allowScripts by rememberSaveable { mutableStateOf(false) }
     // Online parts of a web page (pictures, styles) load only after the person allows it, per opening.
@@ -155,6 +170,9 @@ fun DocumentsApp(
     fun openOurselves(uri: Uri) {
         wordZoom = 1f
         showSource = false
+        showTable = true
+        sheetIndex = 0
+        selectedCell = null
         openedFromOutside = false
         allowScripts = false
         allowOnline = false
@@ -178,6 +196,9 @@ fun DocumentsApp(
             allowOnline = false
             findOpen = false
             findQuery = ""
+            showTable = true
+            sheetIndex = 0
+            selectedCell = null
             viewModel.open(incoming.uri)
         }
     }
@@ -228,6 +249,29 @@ fun DocumentsApp(
             officeEditViewModel.savePowerPoint(current.uri, target, current.deck) { saved -> if (saved) openOurselves(target) }
         }
     }
+    val saveSheetCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DocumentFormat.XLSX_MIME)) { target ->
+        val current = state
+        if (target != null && current is ViewerState.Sheet) {
+            officeEditViewModel.saveExcel(current.uri, target, current.workbook) { saved -> if (saved) openOurselves(target) }
+        }
+    }
+    // Any kind of text: "octet-stream" keeps the name as typed (with text/plain some phones add ".txt" to "data.json").
+    val saveTextCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { target ->
+        val current = state
+        val layout = (current as? ViewerState.Text)?.layout
+        if (target != null && current is ViewerState.Text && layout != null) {
+            officeEditViewModel.saveText(current.uri, target, layout) { saved -> if (saved) openOurselves(target) }
+        }
+    }
+    // Before saving edited text, check it (JSON must parse, XML be well formed); a problem is shown first.
+    val startOfficeSave: () -> Unit = {
+        val current = state
+        val draft = officeEdit.textDraft
+        val problem = if (current is ViewerState.Text && draft != null) TextChecks.check(draft, current.syntax) else null
+        if (problem != null) textProblem = problem.toString() else askOfficeSave = true
+    }
+    val toast: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+
     LaunchedEffect(officeEdit.message) {
         officeEdit.message?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
@@ -470,18 +514,59 @@ fun DocumentsApp(
                 onSaveCopy = {
                     askOfficeSave = false
                     val name = displayNameOf(context, viewModel.openUri())
-                    if (state is ViewerState.Pptx) savePptxCopy.launch(SaveNames.signedName(name)) else saveWordCopy.launch(SaveNames.signedName(name))
+                    when (state) {
+                        is ViewerState.Pptx -> savePptxCopy.launch(SaveNames.signedName(name))
+                        is ViewerState.Sheet -> saveSheetCopy.launch(SaveNames.editedName(name, ".xlsx"))
+                        is ViewerState.Text -> saveTextCopy.launch(SaveNames.editedName(name, ".txt"))
+                        else -> saveWordCopy.launch(SaveNames.signedName(name))
+                    }
                 },
                 onReplace = {
                     askOfficeSave = false
                     when (val current = state) {
                         is ViewerState.Docx -> officeEditViewModel.saveWord(current.uri, null, current.document) { saved -> if (saved) viewModel.reopen() }
                         is ViewerState.Pptx -> officeEditViewModel.savePowerPoint(current.uri, null, current.deck) { saved -> if (saved) viewModel.reopen() }
+                        is ViewerState.Sheet -> officeEditViewModel.saveExcel(current.uri, null, current.workbook) { saved -> if (saved) viewModel.reopen() }
+                        is ViewerState.Text -> current.layout?.let { layout ->
+                            officeEditViewModel.saveText(current.uri, null, layout) { saved -> if (saved) viewModel.reopen() }
+                        }
                         else -> Unit
                     }
                 },
                 onDismiss = { askOfficeSave = false },
             )
+        }
+        textProblem?.let { problem ->
+            val kind = (state as? ViewerState.Text)?.syntax?.label ?: "text"
+            AlertDialog(
+                onDismissRequest = { textProblem = null },
+                title = { Text("This $kind has a problem") },
+                text = { Text("$problem\n\nApps that read this file may not be able to use it until it's fixed.") },
+                confirmButton = { Button(onClick = { textProblem = null; officeEditViewModel.setEditing(true) }) { Text("Fix it") } },
+                dismissButton = {
+                    TextButton(onClick = {
+                        textProblem = null
+                        askOfficeSave = true
+                    }) { Text("Save anyway") }
+                },
+            )
+        }
+        editingCell?.let { (sheet, row, col) ->
+            val current = state as? ViewerState.Sheet
+            val cell = sheet.cell(row, col)
+            if (current != null && sheet.path != null) {
+                EditTextDialog(
+                    title = "Change ${CellRefs.name(row, col)}",
+                    initial = officeEdit.xlsx.textOf(sheet.path, row, col) ?: XlsxEditModel.editText(cell, current.workbook),
+                    onApply = { editingCell = null; officeEditViewModel.setCell(sheet.path, row, col, it) },
+                    onDismiss = { editingCell = null },
+                    label = "Cell",
+                    minLines = 1,
+                    note = cell?.formula?.let { "This cell has a formula (=${it.take(60)}). What you type replaces it." }
+                        ?: if (cell?.kind == CellKind.Date) "Type a date as 2026-11-27 (a time as 14:30). Formulas can't be typed here."
+                        else "Numbers and TRUE / FALSE are saved as such, anything else as text. Formulas can't be typed here.",
+                )
+            }
         }
         if (askOfficeDiscard) {
             AlertDialog(
@@ -531,7 +616,7 @@ fun DocumentsApp(
                         onCloseSearch = closeSearch,
                         sort = librarySort,
                         onSort = { libraryViewModel.setSort(it) },
-                        onBrowse = { picker.launch(arrayOf("application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME, "text/markdown", "text/x-markdown", "text/plain")) },
+                        onBrowse = { picker.launch(PICKER_TYPES) },
                     )
                 } else if (state is ViewerState.Web && findOpen) {
                     WebFindBar(
@@ -545,7 +630,7 @@ fun DocumentsApp(
                         onNext = { webController.findNext(it) },
                         onClose = closeFind,
                     )
-                } else if (state is ViewerState.Docx || state is ViewerState.Pptx) {
+                } else if (state is ViewerState.Docx || state is ViewerState.Pptx || state is ViewerState.Sheet) {
                     TopAppBar(
                         expandedHeight = 48.dp,
                         title = {},
@@ -557,7 +642,9 @@ fun DocumentsApp(
                                 CompactButton("Save \u00b7 ${officeEdit.changeCount}", enabled = !officeEdit.saving) { askOfficeSave = true }
                             }
                             CompactButton(if (officeEdit.editing) "Done" else "Edit", enabled = !officeEdit.saving) {
-                                officeEditViewModel.setEditing(!officeEdit.editing)
+                                val sheets = (state as? ViewerState.Sheet)?.workbook?.sheets
+                                val blocked = sheets?.let { all -> if (all.none { it.readOnly == null }) all.firstOrNull()?.readOnly ?: "This workbook can't be edited here." else null }
+                                if (!officeEdit.editing && blocked != null) toast(blocked) else officeEditViewModel.setEditing(!officeEdit.editing)
                             }
                             if (state is ViewerState.Docx) {
                                 if (wordPages) {
@@ -570,8 +657,12 @@ fun DocumentsApp(
                                     ViewPrefs.setWordPages(context, wordPages)
                                 }
                             }
-                            val officeUri = (state as? ViewerState.Docx)?.uri ?: (state as? ViewerState.Pptx)?.uri
-                            val officeMime = if (state is ViewerState.Pptx) DocumentFormat.PPTX_MIME else DocumentFormat.DOCX_MIME
+                            val officeUri = (state as? ViewerState.Docx)?.uri ?: (state as? ViewerState.Pptx)?.uri ?: (state as? ViewerState.Sheet)?.uri
+                            val officeMime = when (state) {
+                                is ViewerState.Pptx -> DocumentFormat.PPTX_MIME
+                                is ViewerState.Sheet -> DocumentFormat.XLSX_MIME
+                                else -> DocumentFormat.DOCX_MIME
+                            }
                             var officeMenu by remember { mutableStateOf(false) }
                             IconButton(onClick = { officeMenu = true }) { Icon(DocIcons.MoreVert, contentDescription = "More options") }
                             DropdownMenu(expanded = officeMenu, onDismissRequest = { officeMenu = false }) {
@@ -593,14 +684,16 @@ fun DocumentsApp(
                                         },
                                     )
                                 }
-                                DropdownMenuItem(
-                                    text = { Text("Save as PDF") },
-                                    enabled = !exporting,
-                                    onClick = {
-                                        officeMenu = false
-                                        exportPdf.launch(ExportNames.pdfName(displayNameOf(context, officeUri)))
-                                    },
-                                )
+                                if (state !is ViewerState.Sheet) {
+                                    DropdownMenuItem(
+                                        text = { Text("Save as PDF") },
+                                        enabled = !exporting,
+                                        onClick = {
+                                            officeMenu = false
+                                            exportPdf.launch(ExportNames.pdfName(displayNameOf(context, officeUri)))
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Share") },
                                     leadingIcon = { Icon(DocIcons.Share, contentDescription = null) },
@@ -622,11 +715,48 @@ fun DocumentsApp(
                         },
                         actions = {
                             val text = state as ViewerState.Text
-                            if (text.document != null) CompactButton(if (showSource) "Rendered" else "Source") { showSource = !showSource }
+                            if (officeEdit.hasChanges) {
+                                CompactButton("Save", enabled = !officeEdit.saving, onClick = startOfficeSave)
+                            }
+                            if (!officeEdit.editing) {
+                                if (text.document != null && officeEdit.textDraft == null) CompactButton(if (showSource) "Rendered" else "Source") { showSource = !showSource }
+                                if (text.table != null) CompactButton(if (showTable) "Text" else "Table") { showTable = !showTable }
+                            }
+                            CompactButton(if (officeEdit.editing) "Done" else "Edit", enabled = !officeEdit.saving) {
+                                when {
+                                    officeEdit.editing -> officeEditViewModel.setEditing(false)
+                                    text.editBlock != null -> toast(text.editBlock)
+                                    else -> officeEditViewModel.startText(text.source)
+                                }
+                            }
                             var textMenu by remember { mutableStateOf(false) }
                             IconButton(onClick = { textMenu = true }) { Icon(DocIcons.MoreVert, contentDescription = "More options") }
                             DropdownMenu(expanded = textMenu, onDismissRequest = { textMenu = false }) {
-                                if (text.document != null) {
+                                if (officeEdit.hasChanges) {
+                                    DropdownMenuItem(
+                                        text = { Text("Undo all changes") },
+                                        onClick = {
+                                            textMenu = false
+                                            officeEditViewModel.undo()
+                                        },
+                                    )
+                                }
+                                if (text.syntax == TextSyntax.Json && text.editBlock == null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Format JSON") },
+                                        enabled = !officeEdit.saving,
+                                        onClick = {
+                                            textMenu = false
+                                            try {
+                                                val formatted = Json.format(officeEdit.textDraft ?: text.source)
+                                                if (formatted == (officeEdit.textDraft ?: text.source)) toast("Already formatted.") else officeEditViewModel.setText(formatted, text.source)
+                                            } catch (e: JsonException) {
+                                                toast("Can't format: ${e.problem}")
+                                            }
+                                        },
+                                    )
+                                }
+                                if (text.document != null && officeEdit.textDraft == null) {
                                     DropdownMenuItem(
                                         text = { Text("Save as PDF") },
                                         enabled = !exporting,
@@ -641,7 +771,7 @@ fun DocumentsApp(
                                     leadingIcon = { Icon(DocIcons.Share, contentDescription = null) },
                                     onClick = {
                                         textMenu = false
-                                        val mime = if (text.document != null) DocumentFormat.Markdown.mimeType else DocumentFormat.Text.mimeType
+                                        val mime = if (text.document != null) DocumentFormat.Markdown.mimeType else text.syntax.mimeType
                                         if (!ShareFiles.shareFiles(context, listOf(text.uri), mime)) Toast.makeText(context, "This file can't be shared.", Toast.LENGTH_SHORT).show()
                                     },
                                 )
@@ -831,7 +961,33 @@ fun DocumentsApp(
                             if (wordPages) WordPagesScreen(shown, wordZoom) else WordScreen(shown)
                         }
                     }
-                    is ViewerState.Text -> TextFileScreen(s.source, s.document, s.truncated, showSource || s.document == null)
+                    is ViewerState.Text -> TextFileScreen(
+                        source = s.source,
+                        document = s.document,
+                        truncated = s.truncated,
+                        showSource = showSource || s.document == null,
+                        syntax = s.syntax,
+                        table = s.table,
+                        showTable = showTable,
+                        editing = officeEdit.editing,
+                        draft = officeEdit.textDraft,
+                        onDraft = { officeEditViewModel.setText(it, s.source) },
+                    )
+                    is ViewerState.Sheet -> {
+                        // What is shown includes the changes made so far; the file itself is only written on Save.
+                        val shown = remember(s.workbook, officeEdit.xlsx) { XlsxEditModel.apply(s.workbook, officeEdit.xlsx) }
+                        SheetScreen(
+                            workbook = shown,
+                            sheetIndex = sheetIndex,
+                            onSheet = { sheetIndex = it },
+                            selected = selectedCell,
+                            onSelect = { selectedCell = it },
+                            onEdit = if (officeEdit.editing) ({ sheet, row, col ->
+                                val block = sheet.editBlock(row, col)
+                                if (block != null) toast(block) else editingCell = Triple(sheet, row, col)
+                            }) else null,
+                        )
+                    }
                     is ViewerState.Pptx -> {
                         val shown = remember(s.deck, officeEdit.pptx) { PptxEditModel.apply(s.deck, officeEdit.pptx) }
                         val onTap: ((PptxSlide, PptxParagraph) -> Unit)? = if (officeEdit.editing) ({ slide, p -> editingSlide = slide to p }) else null
@@ -953,6 +1109,17 @@ fun DocumentsApp(
         }
     }
 }
+
+/**
+ * What the file picker offers. YAML, TOML and other files often have no type of their own on a phone, so any file of
+ * unknown type ("octet-stream") can be picked too; the app then goes by its name.
+ */
+private val PICKER_TYPES = arrayOf(
+    "application/pdf", "text/html", "application/xhtml+xml", DocumentFormat.DOCX_MIME, DocumentFormat.PPTX_MIME,
+    DocumentFormat.XLSX_MIME, "text/markdown", "text/x-markdown", "text/plain", "application/json", "application/xml",
+    "text/xml", "text/csv", "text/comma-separated-values", "text/tab-separated-values", "application/yaml",
+    "application/x-yaml", "text/yaml", "text/x-yaml", "application/toml", "application/octet-stream",
+)
 
 /** A text button with less padding, so Back, zoom and Share all fit in the slim reading bar on a narrow phone. */
 @Composable

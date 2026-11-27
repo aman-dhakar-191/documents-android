@@ -92,6 +92,12 @@ object DocIcons {
     val Notes by lazy {
         icon("Notes", "M3,18h12v-2H3v2zM3,6v2h18V6H3zM3,13h18v-2H3v2z")
     }
+    val TableChart by lazy {
+        icon(
+            "TableChart",
+            "M10,10.02h5V21h-5zM17,21h3c1.1,0 2,-0.9 2,-2v-9h-5v11zM20,3H5c-1.1,0 -2,0.9 -2,2v3h19V5c0,-1.1 -0.9,-2 -2,-2zM3,19c0,1.1 0.9,2 2,2h3V10H3v9z",
+        )
+    }
     val Slideshow by lazy {
         icon(
             "Slideshow",

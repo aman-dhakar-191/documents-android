@@ -85,4 +85,33 @@ class TextFilesTest {
         assertFalse(text.endsWith('�'))
         assertEquals(TextFiles.MAX_BYTES - 1, text.length)
     }
+
+    @Test fun editedTextIsWrittenBackTheWayTheFileWas() {
+        val cases = listOf(
+            "a\nb\n".toByteArray(),
+            "a\r\nb\r\n".toByteArray(),
+            byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + "x: 1\n".toByteArray(),
+            byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + "é\r\n".toByteArray(Charsets.UTF_16LE),
+            byteArrayOf(0xFE.toByte(), 0xFF.toByte()) + "é".toByteArray(Charsets.UTF_16BE),
+            ByteArray(0),
+        )
+        for (bytes in cases) {
+            val layout = TextFiles.layoutOf(bytes)!!
+            val text = TextFiles.normalize(TextFiles.decode(bytes))
+            assertFalse(text.contains('\r'))
+            assertTrue(TextFiles.encode(text, layout).contentEquals(bytes))
+        }
+    }
+
+    @Test fun windowsLineEndingsComeBackAfterEditing() {
+        val layout = TextFiles.layoutOf("a\r\nb".toByteArray())!!
+        assertTrue(layout.crlf)
+        assertEquals("a\r\nb\r\nc", String(TextFiles.encode("a\nb\nc", layout)))
+    }
+
+    @Test fun filesThatWouldChangeOnSaveCantBeEdited() {
+        assertEquals(null, TextFiles.layoutOf(byteArrayOf('a'.code.toByte(), 0xFF.toByte()))) // not UTF-8 (e.g. Latin-1)
+        assertEquals(null, TextFiles.layoutOf("a\r\nb\nc".toByteArray())) // mixed line endings
+        assertEquals(null, TextFiles.layoutOf(byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0x00, 0xC0.toByte()))) // a zip
+    }
 }
